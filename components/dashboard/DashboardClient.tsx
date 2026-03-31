@@ -5,7 +5,6 @@ import Link from "next/link";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { getSelectedNegocioId } from "@/components/business/BusinessPicker";
 import { BarsEstado, DonutScore } from "@/components/dashboard/charts";
-import { isSuperAdminEmail } from "@/lib/roles";
 
 type MatrizRow = {
   id: string;
@@ -45,9 +44,7 @@ export function DashboardClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<MatrizRow[]>([]);
-  const [alertas, setAlertas] = useState<Array<{ id: string; titulo: string; resumen: string | null; link_oficial: string | null; fecha: string }>>([]);
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
-  const [watchBusy, setWatchBusy] = useState(false);
 
   async function load(id: string) {
     setError(null);
@@ -62,13 +59,6 @@ export function DashboardClient() {
         .limit(50);
       if (e) throw e;
       setRows((data ?? []) as MatrizRow[]);
-
-      const { data: aData } = await supabase
-        .from("alertas_legales")
-        .select("id,titulo,resumen,link_oficial,fecha")
-        .order("fecha", { ascending: false })
-        .limit(3);
-      setAlertas((aData ?? []) as typeof alertas);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "No se pudo cargar la matriz");
       setRows([]);
@@ -145,46 +135,12 @@ export function DashboardClient() {
     .filter((r) => r.prioridad === "critico" || r.prioridad === "alto")
     .slice(0, 5);
 
-  const canRunWatcher = isSuperAdminEmail(sessionEmail);
-
-  async function runLegalWatcher() {
-    if (!canRunWatcher) return;
-    setWatchBusy(true);
-    try {
-      const res = await fetch("/api/legal-watcher/run", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ negocio_id: negocioId })
-      });
-      const data = (await res.json()) as {
-        ok?: boolean;
-        error?: string;
-        code?: string;
-        throttled?: boolean;
-        message?: string;
-        inserted_alertas?: number;
-        inserted_propuestas?: number;
-      };
-      if (!res.ok || data.error) {
-        if (res.status === 429 && data.code === "GEMINI_QUOTA") {
-          throw new Error("Gemini sin cuota (429). Espera y vuelve a intentar, o cambia de API key/plan.");
-        }
-        throw new Error(data.error ?? "No se pudo ejecutar vigilancia");
-      }
-      void load(negocioId!);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Error vigilancia");
-    } finally {
-      setWatchBusy(false);
-    }
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="text-2xl font-semibold">Dashboard</div>
-          <div className="mt-1 text-sm text-charcoal/60">Widgets, vigilancia legal y matriz resumida.</div>
+          <div className="mt-1 text-sm text-charcoal/60">Widgets de matriz resumida y riesgos.</div>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link className="rounded-xl bg-white px-4 py-2 text-sm ring-1 ring-borderSoft hover:bg-cream/70" href="/ai-notebook">
@@ -193,19 +149,6 @@ export function DashboardClient() {
           <Link className="rounded-xl bg-white px-4 py-2 text-sm ring-1 ring-borderSoft hover:bg-cream/70" href="/ai-notebook">
             Generar Matriz de Riesgo
           </Link>
-          <button
-            className="rounded-xl bg-white px-4 py-2 text-sm ring-1 ring-borderSoft hover:bg-cream/70 disabled:cursor-not-allowed disabled:opacity-50"
-            type="button"
-            disabled={!canRunWatcher || watchBusy}
-            title={
-              canRunWatcher
-                ? "Alertas globales + propuestas de matriz para este negocio (revisar en /business)"
-                : "Solo Super Admin"
-            }
-            onClick={() => void runLegalWatcher()}
-          >
-            {watchBusy ? "Ejecutando..." : "Vigilancia Legal Horaria"}
-          </button>
         </div>
       </div>
 
@@ -241,37 +184,7 @@ export function DashboardClient() {
           </div>
         </div>
 
-        <div className="rounded-2xl bg-white p-6 shadow-card ring-1 ring-borderSoft">
-          <div className="flex items-center justify-between">
-            <div className="text-sm font-medium">Vigilancia Legal Horaria</div>
-            <div className="text-xs text-charcoal/60">En tiempo real</div>
-          </div>
-          <div className="mt-4 space-y-3">
-            {alertas.length > 0 ? (
-              alertas.map((a) => (
-                <div key={a.id} className="rounded-xl bg-cream px-3 py-3 ring-1 ring-borderSoft">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="text-sm font-semibold">{a.titulo}</div>
-                    <div className="text-xs text-charcoal/60 whitespace-nowrap">{new Date(a.fecha).toLocaleDateString()}</div>
-                  </div>
-                  <div className="mt-1 text-xs text-charcoal/60">{a.resumen ?? "—"}</div>
-                  {a.link_oficial ? (
-                    <a className="mt-2 inline-block text-xs text-sidebarRose underline" href={a.link_oficial} target="_blank" rel="noreferrer">
-                      Link oficial
-                    </a>
-                  ) : null}
-                </div>
-              ))
-            ) : (
-              <div className="rounded-xl bg-cream px-3 py-3 ring-1 ring-borderSoft">
-                <div className="text-sm font-semibold">Sin alertas aún</div>
-                <div className="mt-1 text-xs text-charcoal/60">
-                  Cuando corra el watcher horario, aquí aparecerán alertas con enlaces al Registro Oficial/Asamblea.
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+        <div />
       </div>
 
       <div className="rounded-2xl bg-white p-6 shadow-card ring-1 ring-borderSoft">

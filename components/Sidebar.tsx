@@ -34,6 +34,7 @@ export function Sidebar() {
   const router = useRouter();
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [email, setEmail] = useState<string | null>(null);
+  const [hasUnread, setHasUnread] = useState(false);
 
   useEffect(() => {
     if (!supabase) return;
@@ -43,6 +44,20 @@ export function Sidebar() {
     });
     return () => sub.subscription.unsubscribe();
   }, [supabase]);
+
+  useEffect(() => {
+    async function loadUnread() {
+      try {
+        const res = await fetch("/api/notificaciones/unread");
+        if (!res.ok) return;
+        const data = (await res.json()) as { has_unread?: boolean };
+        setHasUnread(Boolean(data.has_unread));
+      } catch {
+        // ignore
+      }
+    }
+    void loadUnread();
+  }, []);
 
   const showTransparencia = isSuperAdminEmail(email);
 
@@ -55,6 +70,7 @@ export function Sidebar() {
         <div className="mt-3 space-y-1">
           {nav.map(({ href, label, Icon }) => {
             const active = pathname?.startsWith(href);
+            const isNotif = href === "/notificaciones";
             return (
               <Link
                 key={href}
@@ -62,11 +78,15 @@ export function Sidebar() {
                 className={cn(
                   "flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition",
                   "hover:bg-cream/10",
-                  active && "bg-cream/15 ring-1 ring-cream/10"
+                  active && "bg-cream/15 ring-1 ring-cream/10",
+                  isNotif && hasUnread && !active && "bg-red-500/70 text-white"
                 )}
               >
                 <Icon className="h-5 w-5 text-cream/90" />
-                <span className="text-cream/95">{label}</span>
+                <span className="text-cream/95">
+                  {label}
+                  {isNotif && hasUnread ? <span className="ml-2 inline-block h-2 w-2 rounded-full bg-white" /> : null}
+                </span>
               </Link>
             );
           })}

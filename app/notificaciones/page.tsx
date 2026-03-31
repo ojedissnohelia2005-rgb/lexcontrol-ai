@@ -35,6 +35,7 @@ function NotificacionesClient() {
   const [alertas, setAlertas] = useState<Alerta[]>([]);
   const [nuevosUsuarios, setNuevosUsuarios] = useState<NuevoUsuario[]>([]);
   const [actualizaciones, setActualizaciones] = useState<AlertaActualizacion[]>([]);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!supabase) return;
@@ -77,6 +78,28 @@ function NotificacionesClient() {
 
   const isSuper = isSuperAdminEmail(email);
 
+  async function marcarRevisada(tipo: "legal" | "actualizacion", id: string) {
+    setBusyId(id);
+    try {
+      const res = await fetch("/api/notificaciones/revisar", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ tipo, id })
+      });
+      const data = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || data.error) throw new Error(data.error ?? "No se pudo marcar como revisada");
+      if (tipo === "legal") {
+        setAlertas((prev) => prev.filter((a) => a.id !== id));
+      } else {
+        setActualizaciones((prev) => prev.filter((a) => a.id !== id));
+      }
+    } catch {
+      // ignore error visual por ahora
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -115,6 +138,16 @@ function NotificacionesClient() {
                       Ver fuente
                     </a>
                   ) : null}
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      type="button"
+                      disabled={busyId === a.id}
+                      className="rounded-lg bg-white px-3 py-1 text-[11px] ring-1 ring-borderSoft hover:bg-cream/70 disabled:opacity-50"
+                      onClick={() => void marcarRevisada("legal", a.id)}
+                    >
+                      {busyId === a.id ? "Marcando…" : "Marcar revisada"}
+                    </button>
+                  </div>
                 </div>
               ))
             )}
@@ -166,10 +199,20 @@ function NotificacionesClient() {
                     {new Date(a.created_at).toLocaleString()} · Norma ID: {a.normativa_doc_id.slice(0, 8)}…
                   </div>
                   <div className="mt-1 text-xs">
-                    {a.comentario ?? "Posible actualización detectada. Revisa fuentes oficiales."}
+                    {a.comentario ?? "Posible actualización detectada. Revisa fuentes oficiales y, si aplica, sube la nueva versión desde AI Notebook."}
                   </div>
                   <div className="mt-1 text-[11px] text-charcoal/60">
                     Confianza: {a.nivel_confianza != null ? Math.round(a.nivel_confianza * 100) + "%" : "—"}
+                  </div>
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      type="button"
+                      disabled={busyId === a.id}
+                      className="rounded-lg bg-white px-3 py-1 text-[11px] ring-1 ring-borderSoft hover:bg-cream/70 disabled:opacity-50"
+                      onClick={() => void marcarRevisada("actualizacion", a.id)}
+                    >
+                      {busyId === a.id ? "Marcando…" : "Aceptar / ya revisada"}
+                    </button>
                   </div>
                 </div>
               ))
