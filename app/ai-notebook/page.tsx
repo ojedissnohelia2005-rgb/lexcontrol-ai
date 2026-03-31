@@ -185,7 +185,8 @@ export default function AiNotebookPage() {
       form.set("negocio_id", negocioId);
 
       const res = await fetch("/api/pdfs/process", { method: "POST", body: form });
-      const data = (await res.json()) as {
+      const rawText = await res.text();
+      let data: {
         items?: GeminiExtractionItem[];
         error?: string;
         code?: string;
@@ -195,6 +196,12 @@ export default function AiNotebookPage() {
         fuente_url?: string | null;
         storage_path?: string | null;
       };
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        // Respuesta no JSON (por ejemplo, HTML de error de Vercel)
+        throw new Error(rawText.slice(0, 260));
+      }
       if (!res.ok || data.error) {
         if (res.status === 429 && data.code === "GEMINI_QUOTA") {
           throw new Error(`Gemini sin cuota. Espera ${data.retry_after_seconds ?? 60}s y vuelve a intentar.`);

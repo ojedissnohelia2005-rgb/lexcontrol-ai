@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 const BodySchema = z.object({
   tipo: z.enum(["legal", "actualizacion"]),
@@ -15,8 +16,13 @@ export async function POST(req: Request) {
   const body = BodySchema.parse(await req.json());
   const table = body.tipo === "legal" ? "alertas_legales" : "alertas_actualizacion_normativa";
 
-  const { error } = await supabase.from(table).update({ revisado: true }).eq("id", body.id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-  return NextResponse.json({ ok: true });
+  try {
+    const admin = createSupabaseAdminClient();
+    const { error } = await admin.from(table).update({ revisado: true }).eq("id", body.id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    return NextResponse.json({ ok: true });
+  } catch (e: unknown) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Error" }, { status: 400 });
+  }
 }
 

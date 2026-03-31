@@ -73,6 +73,10 @@ export function RubroYRegulacionPanel({ negocioId }: { negocioId: string }) {
 
   async function guardarCampos() {
     if (!supabase) return;
+    if (!canAdmin) {
+      setError("Solo admin / super admin puede editar estos campos.");
+      return;
+    }
     setError(null);
     setSaving(true);
     try {
@@ -172,10 +176,11 @@ export function RubroYRegulacionPanel({ negocioId }: { negocioId: string }) {
               Ej.: manejo de sustancias, transporte, datos personales, contratos estatales, residuos, etc.
             </div>
             <textarea
-              className="mt-2 min-h-[100px] w-full rounded-xl bg-cream px-3 py-2 text-sm ring-1 ring-borderSoft outline-none focus:ring-2 focus:ring-roseOld"
+              className="mt-2 min-h-[100px] w-full rounded-xl bg-cream px-3 py-2 text-sm ring-1 ring-borderSoft outline-none focus:ring-2 focus:ring-roseOld disabled:opacity-60"
               value={regulacion}
               onChange={(e) => setRegulacion(e.target.value)}
               placeholder="Detalle lo que quieres que la IA tenga en cuenta al orientar búsquedas normativas..."
+              disabled={!canAdmin}
             />
           </label>
 
@@ -185,27 +190,29 @@ export function RubroYRegulacionPanel({ negocioId }: { negocioId: string }) {
               Texto libre: qué norma o tema crees desactualizado y qué hipótesis tienes. Luego sube el PDF en AI Notebook o pega links abajo.
             </div>
             <textarea
-              className="mt-2 min-h-[88px] w-full rounded-xl bg-cream px-3 py-2 text-sm ring-1 ring-borderSoft outline-none focus:ring-2 focus:ring-roseOld"
+              className="mt-2 min-h-[88px] w-full rounded-xl bg-cream px-3 py-2 text-sm ring-1 ring-borderSoft outline-none focus:ring-2 focus:ring-roseOld disabled:opacity-60"
               value={notaActualizar}
               onChange={(e) => setNotaActualizar(e.target.value)}
               placeholder="Ej.: posible reforma al reglamento X; dudas sobre SBU en sanciones del sector..."
+              disabled={!canAdmin}
             />
           </label>
 
           <label className="block">
             <div className="text-sm font-medium">Enlaces (Drive, Registro Oficial, PDFs)</div>
             <textarea
-              className="mt-2 min-h-[64px] w-full rounded-xl bg-cream px-3 py-2 text-sm ring-1 ring-borderSoft outline-none focus:ring-2 focus:ring-roseOld"
+              className="mt-2 min-h-[64px] w-full rounded-xl bg-cream px-3 py-2 text-sm ring-1 ring-borderSoft outline-none focus:ring-2 focus:ring-roseOld disabled:opacity-60"
               value={urlsActualizar}
               onChange={(e) => setUrlsActualizar(e.target.value)}
               placeholder="Un enlace por línea..."
+              disabled={!canAdmin}
             />
           </label>
 
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              disabled={saving}
+              disabled={saving || !canAdmin}
               className="rounded-xl bg-sidebarRose px-4 py-2 text-sm font-medium text-cream hover:opacity-90 disabled:opacity-50"
               onClick={() => void guardarCampos()}
             >
