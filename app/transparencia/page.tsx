@@ -219,15 +219,21 @@ export default function TransparenciaPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((r) => (
-                    <tr key={r.id} className="border-t border-borderSoft">
-                      <td className="px-4 py-3 whitespace-nowrap">{new Date(r.fecha).toLocaleString()}</td>
-                      <td className="px-4 py-3">{r.accion}</td>
-                      <td className="px-4 py-3">{r.tabla}</td>
-                      <td className="px-4 py-3">{r.registro_id ?? "—"}</td>
-                      <td className="px-4 py-3">{r.usuario_id ?? "—"}</td>
-                    </tr>
-                  ))}
+                  {rows.map((r) => {
+                    const vn = (r.valor_nuevo ?? {}) as any;
+                    const nombreVN = typeof vn.nombre === "string" ? vn.nombre : undefined;
+                    const emailVN = typeof vn.email === "string" ? vn.email : undefined;
+                    const displayUsuario = nombreVN || emailVN || r.usuario_id || "—";
+                    return (
+                      <tr key={r.id} className="border-t border-borderSoft">
+                        <td className="px-4 py-3 whitespace-nowrap">{new Date(r.fecha).toLocaleString()}</td>
+                        <td className="px-4 py-3">{r.accion}</td>
+                        <td className="px-4 py-3">{r.tabla}</td>
+                        <td className="px-4 py-3">{r.registro_id ?? "—"}</td>
+                        <td className="px-4 py-3">{displayUsuario}</td>
+                      </tr>
+                    );
+                  })}
                   {rows.length === 0 ? (
                     <tr>
                       <td className="px-4 py-4 text-sm text-charcoal/60" colSpan={5}>

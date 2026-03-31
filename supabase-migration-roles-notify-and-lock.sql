@@ -15,6 +15,7 @@ declare
 begin
   v_email := lower(new.email);
   v_role := 'user';
+  -- Nota: institución se usa solo para que Super Admin revise; el rol efectivo se ajusta luego desde Transparencia.
   if v_email in (
     'nohe.ojedis@cumplimientonormativo.edu.ec',
     'ortix@cumplimientonormativo.edu.ec',
@@ -25,12 +26,32 @@ begin
   end if;
 
   insert into public.profiles (id, email, nombre, rol, avatar_url)
-  values (new.id, v_email, coalesce(new.raw_user_meta_data->>'nombre', ''), v_role, new.raw_user_meta_data->>'avatar_url')
-  on conflict (id) do update set email = excluded.email;
+  values (
+    new.id,
+    v_email,
+    coalesce(new.raw_user_meta_data->>'nombres', '') || ' ' || coalesce(new.raw_user_meta_data->>'apellidos', ''),
+    v_role,
+    new.raw_user_meta_data->>'avatar_url'
+  )
+  on conflict (id) do update set
+    email = excluded.email,
+    nombre = excluded.nombre;
 
   -- "Notificación" para super admins (visible en Transparencia -> Audit log)
   insert into public.audit_log (usuario_id, accion, tabla, registro_id, valor_nuevo)
-  values (new.id, 'NEW_USER_SIGNUP', 'profiles', new.id, jsonb_build_object('email', v_email, 'rol_inicial', v_role));
+  values (
+    new.id,
+    'NEW_USER_SIGNUP',
+    'profiles',
+    new.id,
+    jsonb_build_object(
+      'email', v_email,
+      'rol_inicial', v_role,
+      'nombres', new.raw_user_meta_data->>'nombres',
+      'apellidos', new.raw_user_meta_data->>'apellidos',
+      'institucion', new.raw_user_meta_data->>'institucion'
+    )
+  );
 
   return new;
 end;

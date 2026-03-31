@@ -63,6 +63,9 @@ export default function LoginPage() {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [nombres, setNombres] = useState("");
+  const [apellidos, setApellidos] = useState("");
+  const [institucion, setInstitucion] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const submitLock = useRef(false);
@@ -110,7 +113,22 @@ export default function LoginPage() {
         const { error: e } = await supabase.auth.signUp({
           email,
           password,
-          options: origin ? { emailRedirectTo: `${origin}/dashboard` } : undefined
+          options: origin
+            ? {
+                emailRedirectTo: `${origin}/dashboard`,
+                data: {
+                  nombres: nombres.trim() || null,
+                  apellidos: apellidos.trim() || null,
+                  institucion: institucion.trim() || null
+                }
+              }
+            : {
+                data: {
+                  nombres: nombres.trim() || null,
+                  apellidos: apellidos.trim() || null,
+                  institucion: institucion.trim() || null
+                }
+              }
         });
         if (e) throw e;
         // For email-confirm flows, user may need to confirm; still redirect to dashboard for now.
@@ -259,6 +277,43 @@ export default function LoginPage() {
                   <div className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-200">
                     Falta configurar Supabase en <span className="font-medium">.env.local</span>.
                   </div>
+                ) : null}
+                {supabase && mode === "register" ? (
+                  <>
+                    <label className="block">
+                      <div className="text-sm font-medium">Nombres</div>
+                      <input
+                        className="mt-2 w-full rounded-xl bg-cream px-3 py-2 ring-1 ring-borderSoft outline-none focus:ring-2 focus:ring-roseOld"
+                        value={nombres}
+                        onChange={(e) => setNombres(e.target.value)}
+                        placeholder="Nombres"
+                        autoComplete="given-name"
+                      />
+                    </label>
+                    <label className="block">
+                      <div className="text-sm font-medium">Apellidos</div>
+                      <input
+                        className="mt-2 w-full rounded-xl bg-cream px-3 py-2 ring-1 ring-borderSoft outline-none focus:ring-2 focus:ring-roseOld"
+                        value={apellidos}
+                        onChange={(e) => setApellidos(e.target.value)}
+                        placeholder="Apellidos"
+                        autoComplete="family-name"
+                      />
+                    </label>
+                    <label className="block">
+                      <div className="text-sm font-medium">Institución / área</div>
+                      <input
+                        className="mt-2 w-full rounded-xl bg-cream px-3 py-2 ring-1 ring-borderSoft outline-none focus:ring-2 focus:ring-roseOld"
+                        value={institucion}
+                        onChange={(e) => setInstitucion(e.target.value)}
+                        placeholder="Ej.: Empresa X, Compliance Team, Auditoría…"
+                      />
+                      <p className="mt-1 text-[11px] text-charcoal/50">
+                        Si indicas <span className="font-semibold">Compliance Team</span>, los Super Admin podrán darte rol de administrador tras
+                        revisar tu solicitud.
+                      </p>
+                    </label>
+                  </>
                 ) : null}
                 <label className="block">
                   <div className="text-sm font-medium">Email</div>
