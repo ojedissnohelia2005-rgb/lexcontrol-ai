@@ -1,3 +1,5 @@
+"use client";
+
 import { AppShell } from "@/components/AppShell";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { useEffect, useMemo, useState } from "react";
