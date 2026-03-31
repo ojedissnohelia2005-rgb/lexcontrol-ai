@@ -20,11 +20,21 @@ type NuevoUsuario = {
   rol_inicial: string;
 };
 
+type AlertaActualizacion = {
+  id: string;
+  created_at: string;
+  normativa_doc_id: string;
+  tiene_posible_actualizacion: boolean;
+  comentario: string | null;
+  nivel_confianza: number | null;
+};
+
 function NotificacionesClient() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [email, setEmail] = useState<string | null>(null);
   const [alertas, setAlertas] = useState<Alerta[]>([]);
   const [nuevosUsuarios, setNuevosUsuarios] = useState<NuevoUsuario[]>([]);
+  const [actualizaciones, setActualizaciones] = useState<AlertaActualizacion[]>([]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -56,6 +66,13 @@ function NotificacionesClient() {
           })) ?? [];
         setNuevosUsuarios(list);
       });
+
+    supabase
+      .from("alertas_actualizacion_normativa")
+      .select("id,created_at,normativa_doc_id,tiene_posible_actualizacion,comentario,nivel_confianza")
+      .order("created_at", { ascending: false })
+      .limit(20)
+      .then(({ data }) => setActualizaciones((data ?? []) as AlertaActualizacion[]));
   }, [supabase]);
 
   const isSuper = isSuperAdminEmail(email);
@@ -126,6 +143,34 @@ function NotificacionesClient() {
                       Puedes gestionar roles desde la sección <span className="font-semibold">Transparencia</span>.
                     </div>
                   ) : null}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-2xl bg-white p-5 shadow-card ring-1 ring-borderSoft">
+          <div className="text-sm font-medium">Posibles actualizaciones de normativa</div>
+          <div className="mt-2 text-xs text-charcoal/60">
+            La IA marca normas que podrían tener una versión más reciente. Revisa las fuentes y sube manualmente la nueva norma si aplica.
+          </div>
+          <div className="mt-3 space-y-3 max-h-80 overflow-y-auto">
+            {actualizaciones.length === 0 ? (
+              <div className="rounded-xl bg-cream px-3 py-3 text-xs text-charcoal/70 ring-1 ring-borderSoft">
+                No hay alertas de actualización todavía. Ejecuta vigilancia legal con normas recientes en memoria.
+              </div>
+            ) : (
+              actualizaciones.map((a) => (
+                <div key={a.id} className="rounded-xl bg-cream px-3 py-3 text-xs text-charcoal/80 ring-1 ring-borderSoft">
+                  <div className="text-[11px] text-charcoal/60">
+                    {new Date(a.created_at).toLocaleString()} · Norma ID: {a.normativa_doc_id.slice(0, 8)}…
+                  </div>
+                  <div className="mt-1 text-xs">
+                    {a.comentario ?? "Posible actualización detectada. Revisa fuentes oficiales."}
+                  </div>
+                  <div className="mt-1 text-[11px] text-charcoal/60">
+                    Confianza: {a.nivel_confianza != null ? Math.round(a.nivel_confianza * 100) + "%" : "—"}
+                  </div>
                 </div>
               ))
             )}

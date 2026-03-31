@@ -140,9 +140,11 @@ export async function POST(req: Request) {
     const geminiJson = JSON.parse(match[0]) as {
       alertas?: Array<Record<string, unknown>>;
       filas_matriz?: Array<Record<string, unknown>>;
+      actualizaciones?: Array<Record<string, unknown>>;
     };
     const alertas = Array.isArray(geminiJson.alertas) ? geminiJson.alertas : [];
     const filas = Array.isArray(geminiJson.filas_matriz) ? geminiJson.filas_matriz : [];
+    const actualizaciones = Array.isArray(geminiJson.actualizaciones) ? geminiJson.actualizaciones : [];
 
     let insertedAlertas = 0;
     if (alertas.length > 0) {
@@ -194,17 +196,57 @@ export async function POST(req: Request) {
       insertedPropuestas = propPayload.length;
     }
 
+    let insertedActualizaciones = 0;
+    if (actualizaciones.length > 0) {
+      const updPayload = actualizaciones
+        .map((u) => {
+          const normativaId = typeof u.normativa_id === "string" ? u.normativa_id : null;
+          if (!normativaId) return null;
+          const fuentes = Array.isArray(u.fuentes) ? u.fuentes : null;
+          return {
+            normativa_doc_id: normativaId,
+            tiene_posible_actualizacion: u.posible_actualizacion !== false,
+            comentario: u.comentario ? String(u.comentario) : null,
+            nivel_confianza: typeof u.nivel_confianza === "number" ? u.nivel_confianza : null,
+            fuentes: fuentes ? JSON.stringify(fuentes) : null
+          };
+        })
+        .filter(Boolean) as {
+        normativa_doc_id: string;
+        tiene_posible_actualizacion: boolean;
+        comentario: string | null;
+        nivel_confianza: number | null;
+        fuentes: string | null;
+      }[];
+      if (updPayload.length > 0) {
+        const { error: uErr } = await supabase.from("alertas_actualizacion_normativa").insert(
+          updPayload.map((r) => ({
+            ...r,
+            fuentes: r.fuentes ? (JSON.parse(r.fuentes) as unknown) : null
+          }))
+        );
+        if (uErr) return NextResponse.json({ error: uErr.message }, { status: 400 });
+        insertedActualizaciones = updPayload.length;
+      }
+    }
+
     await supabase.from("audit_log").insert({
       usuario_id: userData.user.id,
       accion: "LEGAL_WATCHER_RUN",
       tabla: "alertas_legales",
-      valor_nuevo: { alertas: insertedAlertas, propuestas: insertedPropuestas, negocio_id: negocio_id ?? null }
+      valor_nuevo: {
+        alertas: insertedAlertas,
+        propuestas: insertedPropuestas,
+        actualizaciones: insertedActualizaciones,
+        negocio_id: negocio_id ?? null
+      }
     });
 
     return NextResponse.json({
       ok: true,
       inserted_alertas: insertedAlertas,
       inserted_propuestas: insertedPropuestas,
+      inserted_actualizaciones: insertedActualizaciones,
       negocio_id: negocio_id ?? null
     });
   } catch (e: unknown) {

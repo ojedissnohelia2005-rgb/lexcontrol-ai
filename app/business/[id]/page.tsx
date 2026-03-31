@@ -1,5 +1,6 @@
 import { AppShell } from "@/components/AppShell";
 import { BusinessMatrix } from "@/components/business/BusinessMatrix";
+import { BusinessActivities } from "@/components/business/BusinessActivities";
 import { RubroYRegulacionPanel } from "@/components/business/RubroYRegulacionPanel";
 
 export default async function BusinessPage({ params }: { params: Promise<{ id: string }> }) {
@@ -15,6 +16,7 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
       </div>
       <div className="space-y-6">
         <RubroYRegulacionPanel negocioId={id} />
+        <BusinessActivities negocioId={id} />
         <BusinessMatrix negocioId={id} />
       </div>
     </AppShell>
