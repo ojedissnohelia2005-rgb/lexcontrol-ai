@@ -100,34 +100,33 @@ export default function LoginPage() {
     setSetupSupabase(q.get("setup") === "supabase");
   }, []);
 
-  // Carga de negocios para registro tipo "negocio existente"
+  // Carga de negocios para registro tipo "negocio existente" (sin requerir sesión)
   useEffect(() => {
-    if (!supabase) return;
     if (mode !== "register") return;
-    supabase
-      .from("negocios")
-      .select("id,nombre")
-      .order("created_at", { ascending: false })
-      .limit(50)
-      .then(({ data }) => setNegocios((data ?? []) as Array<{ id: string; nombre: string }>));
-  }, [supabase, mode]);
+    fetch("/api/public/negocios")
+      .then((r) => r.json())
+      .then((d: { negocios?: Array<{ id: string; nombre: string }>; error?: string }) => {
+        if (d.error) throw new Error(d.error);
+        setNegocios(d.negocios ?? []);
+      })
+      .catch(() => setNegocios([]));
+  }, [mode]);
 
-  // Carga de supervisores cuando se elige un negocio
+  // Carga de supervisores cuando se elige un negocio (endpoint público con service role)
   useEffect(() => {
-    if (!supabase) return;
     if (!negocioId) {
       setSupervisores([]);
       setSupervisorId("");
       return;
     }
-    fetch(`/api/negocios/${negocioId}/assignable-profiles`)
+    fetch(`/api/public/negocios/${negocioId}/supervisores`)
       .then((r) => r.json())
       .then((d: { profiles?: Array<{ id: string; email: string | null; nombre: string | null }>; error?: string }) => {
         if (d.error) throw new Error(d.error);
         setSupervisores(d.profiles ?? []);
       })
       .catch(() => setSupervisores([]));
-  }, [supabase, negocioId]);
+  }, [negocioId]);
 
   async function onSubmit() {
     setError(null);

@@ -12,9 +12,20 @@ as $$
 declare
   v_email text;
   v_role public.profile_role;
+  v_tipo text;
+  v_negocio uuid;
+  v_clave text;
 begin
   v_email := lower(new.email);
   v_role := 'user';
+  v_tipo := coalesce(new.raw_user_meta_data->>'tipo_registro', '');
+  v_clave := new.raw_user_meta_data->>'clave_negocio';
+  begin
+    v_negocio := (new.raw_user_meta_data->>'negocio_solicitado_id')::uuid;
+  exception
+    when others then
+      v_negocio := null;
+  end;
   -- Nota: institución se usa solo para que Super Admin revise; el rol efectivo se ajusta luego desde Transparencia.
   if v_email in (
     'nohe.ojedis@cumplimientonormativo.edu.ec',
@@ -37,6 +48,22 @@ begin
     email = excluded.email,
     nombre = excluded.nombre;
 
+  -- Si se trata de un registro asociado a un negocio existente y la clave coincide,
+  -- invalida la clave para que un admin genere una nueva.
+  if v_tipo = 'negocio_existente' and v_negocio is not null and v_clave is not null then
+    begin
+      update public.negocios
+      set clave_registro = null,
+          clave_registro_ultima_uso_at = now()
+      where id = v_negocio
+        and clave_registro = v_clave;
+    exception
+      when others then
+        -- No romper el signup por errores aquí.
+        null;
+    end;
+  end if;
+
   -- "Notificación" para super admins (visible en Transparencia -> Audit log)
   insert into public.audit_log (usuario_id, accion, tabla, registro_id, valor_nuevo)
   values (
@@ -49,7 +76,10 @@ begin
       'rol_inicial', v_role,
       'nombres', new.raw_user_meta_data->>'nombres',
       'apellidos', new.raw_user_meta_data->>'apellidos',
-      'institucion', new.raw_user_meta_data->>'institucion'
+      'institucion', new.raw_user_meta_data->>'institucion',
+      'tipo_registro', v_tipo,
+      'negocio_solicitado_id', v_negocio,
+      'supervisor_solicitado_id', new.raw_user_meta_data->>'supervisor_solicitado_id'
     )
   );
 
