@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getGeminiFlashModel } from "@/lib/gemini";
-import { isSuperAdminSession } from "@/lib/auth-server";
 import { classifyPrioridad, computePriorityScore, estimateUsdFromSanction } from "@/lib/finance";
 
 const BodySchema = z
@@ -22,9 +21,6 @@ export async function POST(req: Request) {
     const supabase = createSupabaseServerClient();
     const { data: userData } = await supabase.auth.getUser();
     if (!userData.user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
-
-    const okAdmin = await isSuperAdminSession(supabase, userData.user.id, userData.user.email);
-    if (!okAdmin) return NextResponse.json({ error: "Solo Super Admin puede ejecutar vigilancia" }, { status: 403 });
 
     let negocio_id: string | undefined;
     try {
@@ -77,10 +73,33 @@ export async function POST(req: Request) {
       });
     }
 
+    // Normativa real modificada recientemente (últimos 30 días) para usar como base de vigilancia.
+    const sinceDocs = new Date(Date.now() - 30 * 24 * 60 * 60_000).toISOString();
+    const { data: recientes } = await supabase
+      .from("normativa_docs")
+      .select("id,titulo,fecha_normativa,texto_extraido")
+      .or(`fecha_normativa.gte.${sinceDocs},updated_at.gte.${sinceDocs}`)
+      .order("fecha_normativa", { ascending: false })
+      .limit(12);
+
+    const docsBlock =
+      (recientes ?? [])
+        .map(
+          (d) =>
+            `- id=${d.id} titulo=${d.titulo ?? "—"} fecha=${d.fecha_normativa ?? "desconocida"}\n` +
+            `${String(d.texto_extraido ?? "").slice(0, 2000)}`
+        )
+        .join("\n\n") || "Sin normas recientes (30 días) en la base; responde sin inventar normas.";
+
     const model = getGeminiFlashModel();
     const prompt = [
-      "Simula vigilancia horaria legal Ecuador 2026 (Registro Oficial, Asamblea, sectores Hidrocarburos/Laboral/Tributario/Ambiental).",
-      negocio_id ? `Enfócate en lo relevante para este negocio:\n${negocioCtx}` : "Alertas generales del ecosistema legal.",
+      "Vigilancia legal Ecuador 2026 basada SOLO en normas reales de la base de datos (no inventes leyes).",
+      "",
+      "Contexto de negocio (si aplica):",
+      negocio_id ? negocioCtx : "—",
+      "",
+      "NORMATIVA_MODIFICADA_ULTIMOS_30_DIAS:",
+      docsBlock,
       "",
       "Devuelve SOLO JSON con esta forma:",
       "{",
@@ -88,12 +107,11 @@ export async function POST(req: Request) {
       '  "filas_matriz": [ { "articulo", "requisito", "sancion", "cita_textual", "link_fuente_oficial", "impacto_economico", "probabilidad_incumplimiento" } ]',
       "}",
       "",
-      "- alertas: 2 ítems, links plausibles (pueden ser genéricos a sitios oficiales), verificado false.",
+      "- Usa como fuente principal las normas listadas (si mencionas otras, indícalo como referencia general, no como alerta concreta).",
+      "- No inventes números exactos de ley o artículos; si extrapolas, dilo en cita_textual como 'hipótesis para revisión'.",
       negocio_id
-        ? "- filas_matriz: 2 a 5 filas accionables que podrían afectar al negocio si la alerta fuera real (para revisión humana)."
-        : "- filas_matriz: array vacío [] si no hay negocio_id.",
-      "",
-      "No inventes números de ley con certeza; si simulas, indícalo en cita_textual como 'simulación'."
+        ? "- filas_matriz: 2 a 5 filas accionables que podrían afectar al negocio según la normativa reciente (para revisión humana, nunca aprobación automática)."
+        : "- filas_matriz: array vacío [] si no hay negocio_id."
     ].join("\n");
 
     let text = "";

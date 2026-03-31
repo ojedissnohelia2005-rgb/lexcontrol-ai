@@ -13,7 +13,7 @@ import type { ComparacionNormativa } from "@/types/domain";
 
 type NegocioMini = { id: string; nombre: string; sector: string | null; detalles_negocio: string | null };
 
-type NormativaRow = { id: string; titulo: string | null; created_at: string; sha256: string | null };
+type NormativaRow = { id: string; titulo: string | null; created_at: string; sha256: string | null; es_base_sistema?: boolean };
 
 function formatUiError(e: unknown) {
   const raw = e instanceof Error ? e.message : String(e);
@@ -52,7 +52,7 @@ export default function AiNotebookPage() {
     if (!supabase || !negocioId) return;
     const { data } = await supabase
       .from("normativa_docs")
-      .select("id,titulo,created_at,sha256")
+      .select("id,titulo,created_at,sha256,es_base_sistema")
       .eq("negocio_id", negocioId)
       .order("created_at", { ascending: false });
     setNormativaDocs((data ?? []) as NormativaRow[]);
@@ -385,15 +385,21 @@ export default function AiNotebookPage() {
                 {normativaDocs.length === 0 ? (
                   <div className="px-2 py-2 text-xs text-charcoal/60">Sin documentos. Cambia a “Subir nueva normativa”.</div>
                 ) : (
-                  normativaDocs.map((d) => (
-                    <label key={d.id} className="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 hover:bg-white/80">
-                      <input type="checkbox" checked={selectedDocIds.has(d.id)} onChange={() => toggleDoc(d.id)} />
-                      <span className="text-xs leading-snug">
-                        <span className="font-medium text-charcoal">{d.titulo ?? "Sin título"}</span>
-                        <span className="block text-[10px] text-charcoal/50">{new Date(d.created_at).toLocaleString()}</span>
-                      </span>
-                    </label>
-                  ))
+                  normativaDocs.map((d) => {
+                    const base = d.es_base_sistema === true;
+                    return (
+                      <label key={d.id} className="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 hover:bg-white/80">
+                        <input type="checkbox" checked={selectedDocIds.has(d.id)} onChange={() => toggleDoc(d.id)} />
+                        <span className="text-xs leading-snug">
+                          <span className="font-medium text-charcoal">
+                            {d.titulo ?? "Sin título"}
+                            {base ? <span className="ml-1 rounded-full bg-sidebarRose/10 px-2 py-0.5 text-[10px] font-semibold text-sidebarRose">Base sistema</span> : null}
+                          </span>
+                          <span className="block text-[10px] text-charcoal/50">{new Date(d.created_at).toLocaleString()}</span>
+                        </span>
+                      </label>
+                    );
+                  })
                 )}
               </div>
               <div className="mt-3 grid grid-cols-1 gap-2">

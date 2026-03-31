@@ -12,7 +12,8 @@ import { isSuperAdminEmail } from "@/lib/roles";
 const nav = [
   { href: "/dashboard", label: "Dashboard", Icon: IconDashboard },
   { href: "/negocios", label: "Negocios", Icon: IconBuilding },
-  { href: "/ai-notebook", label: "AI Notebook", Icon: IconNotebook }
+  { href: "/ai-notebook", label: "AI Notebook", Icon: IconNotebook },
+  { href: "/notificaciones", label: "Notificaciones", Icon: IconShield }
 ];
 
 function IconShield({ className }: { className?: string }) {
@@ -120,10 +121,6 @@ export function Sidebar() {
               </Link>
             </div>
           )}
-        </div>
-        <div className="rounded-xl bg-cream/10 px-3 py-3">
-          <div className="font-medium text-cream/90">Vigilancia legal</div>
-          <div className="mt-1">Se actualiza cada hora (simulado).</div>
         </div>
       </div>
     </aside>
