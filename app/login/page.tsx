@@ -66,6 +66,12 @@ export default function LoginPage() {
   const [nombres, setNombres] = useState("");
   const [apellidos, setApellidos] = useState("");
   const [institucion, setInstitucion] = useState("");
+  const [tipoRegistro, setTipoRegistro] = useState<"" | "negocio_existente" | "compliance_team">("");
+  const [negocios, setNegocios] = useState<Array<{ id: string; nombre: string }>>([]);
+  const [negocioId, setNegocioId] = useState("");
+  const [supervisores, setSupervisores] = useState<Array<{ id: string; nombre: string | null; email: string | null }>>([]);
+  const [supervisorId, setSupervisorId] = useState("");
+  const [claveNegocio, setClaveNegocio] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const submitLock = useRef(false);
@@ -94,6 +100,35 @@ export default function LoginPage() {
     setSetupSupabase(q.get("setup") === "supabase");
   }, []);
 
+  // Carga de negocios para registro tipo "negocio existente"
+  useEffect(() => {
+    if (!supabase) return;
+    if (mode !== "register") return;
+    supabase
+      .from("negocios")
+      .select("id,nombre")
+      .order("created_at", { ascending: false })
+      .limit(50)
+      .then(({ data }) => setNegocios((data ?? []) as Array<{ id: string; nombre: string }>));
+  }, [supabase, mode]);
+
+  // Carga de supervisores cuando se elige un negocio
+  useEffect(() => {
+    if (!supabase) return;
+    if (!negocioId) {
+      setSupervisores([]);
+      setSupervisorId("");
+      return;
+    }
+    fetch(`/api/negocios/${negocioId}/assignable-profiles`)
+      .then((r) => r.json())
+      .then((d: { profiles?: Array<{ id: string; email: string | null; nombre: string | null }>; error?: string }) => {
+        if (d.error) throw new Error(d.error);
+        setSupervisores(d.profiles ?? []);
+      })
+      .catch(() => setSupervisores([]));
+  }, [supabase, negocioId]);
+
   async function onSubmit() {
     setError(null);
     if (!supabase) {
@@ -119,14 +154,22 @@ export default function LoginPage() {
                 data: {
                   nombres: nombres.trim() || null,
                   apellidos: apellidos.trim() || null,
-                  institucion: institucion.trim() || null
+                  institucion: institucion.trim() || null,
+                  tipo_registro: tipoRegistro || null,
+                  negocio_solicitado_id: tipoRegistro === "negocio_existente" ? negocioId || null : null,
+                  supervisor_solicitado_id: tipoRegistro === "negocio_existente" ? supervisorId || null : null,
+                  clave_negocio: tipoRegistro === "negocio_existente" ? claveNegocio || null : null
                 }
               }
             : {
                 data: {
                   nombres: nombres.trim() || null,
                   apellidos: apellidos.trim() || null,
-                  institucion: institucion.trim() || null
+                  institucion: institucion.trim() || null,
+                  tipo_registro: tipoRegistro || null,
+                  negocio_solicitado_id: tipoRegistro === "negocio_existente" ? negocioId || null : null,
+                  supervisor_solicitado_id: tipoRegistro === "negocio_existente" ? supervisorId || null : null,
+                  clave_negocio: tipoRegistro === "negocio_existente" ? claveNegocio || null : null
                 }
               }
         });
@@ -302,17 +345,68 @@ export default function LoginPage() {
                     </label>
                     <label className="block">
                       <div className="text-sm font-medium">Institución / área</div>
-                      <input
-                        className="mt-2 w-full rounded-xl bg-cream px-3 py-2 ring-1 ring-borderSoft outline-none focus:ring-2 focus:ring-roseOld"
-                        value={institucion}
-                        onChange={(e) => setInstitucion(e.target.value)}
-                        placeholder="Ej.: Empresa X, Compliance Team, Auditoría…"
-                      />
+                      <select
+                        className="mt-2 w-full rounded-xl bg-cream px-3 py-2 text-sm ring-1 ring-borderSoft outline-none focus:ring-2 focus:ring-roseOld"
+                        value={tipoRegistro}
+                        onChange={(e) => {
+                          const v = e.target.value as "" | "negocio_existente" | "compliance_team";
+                          setTipoRegistro(v);
+                        }}
+                      >
+                        <option value="">— Selecciona —</option>
+                        <option value="negocio_existente">Negocio ya existente</option>
+                        <option value="compliance_team">Compliance Team</option>
+                      </select>
                       <p className="mt-1 text-[11px] text-charcoal/50">
-                        Si indicas <span className="font-semibold">Compliance Team</span>, los Super Admin podrán darte rol de administrador tras
-                        revisar tu solicitud.
+                        Para <span className="font-semibold">Compliance Team</span>, un Super Admin deberá aprobar tu acceso de administrador.
                       </p>
                     </label>
+                    {tipoRegistro === "negocio_existente" ? (
+                      <>
+                        <label className="block">
+                          <div className="text-sm font-medium">Negocio</div>
+                          <select
+                            className="mt-2 w-full rounded-xl bg-cream px-3 py-2 text-sm ring-1 ring-borderSoft outline-none focus:ring-2 focus:ring-roseOld"
+                            value={negocioId}
+                            onChange={(e) => setNegocioId(e.target.value)}
+                          >
+                            <option value="">— Selecciona un negocio —</option>
+                            {negocios.map((n) => (
+                              <option key={n.id} value={n.id}>
+                                {n.nombre}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="block">
+                          <div className="text-sm font-medium">Supervisor / Administrador</div>
+                          <select
+                            className="mt-2 w-full rounded-xl bg-cream px-3 py-2 text-sm ring-1 ring-borderSoft outline-none focus:ring-2 focus:ring-roseOld"
+                            value={supervisorId}
+                            onChange={(e) => setSupervisorId(e.target.value)}
+                          >
+                            <option value="">— Selecciona supervisor —</option>
+                            {supervisores.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.nombre || p.email || p.id}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="mt-1 text-[11px] text-charcoal/50">
+                            El supervisor que elijas verá esta solicitud en Notificaciones / Transparencia.
+                          </p>
+                        </label>
+                        <label className="block">
+                          <div className="text-sm font-medium">Clave del negocio</div>
+                          <input
+                            className="mt-2 w-full rounded-xl bg-cream px-3 py-2 ring-1 ring-borderSoft outline-none focus:ring-2 focus:ring-roseOld"
+                            value={claveNegocio}
+                            onChange={(e) => setClaveNegocio(e.target.value)}
+                            placeholder="Clave entregada por tu administrador"
+                          />
+                        </label>
+                      </>
+                    ) : null}
                   </>
                 ) : null}
                 <label className="block">
@@ -339,7 +433,15 @@ export default function LoginPage() {
                 {error ? <div className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-200">{error}</div> : null}
                 <button
                   className="w-full rounded-xl bg-sidebarRose px-3 py-2 text-sm font-medium text-cream hover:opacity-90 disabled:opacity-50"
-                  disabled={busy || !supabase || !email || !password}
+                  disabled={
+                    busy ||
+                    !supabase ||
+                    !email ||
+                    !password ||
+                    (mode === "register" &&
+                      (tipoRegistro === "" ||
+                        (tipoRegistro === "negocio_existente" && (!negocioId || !supervisorId || !claveNegocio))))
+                  }
                   onClick={onSubmit}
                 >
                   {busy ? "Procesando..." : mode === "login" ? "Ingresar" : "Crear cuenta"}
