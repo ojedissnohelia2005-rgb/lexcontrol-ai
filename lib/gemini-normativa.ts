@@ -1,4 +1,4 @@
-import { getGeminiFlashModel } from "@/lib/gemini";
+import { generateAiText } from "@/lib/ai";
 import type { GeminiExtractionItem } from "@/app/api/gemini/extract/route";
 import type { ComparacionNormativa } from "@/types/domain";
 
@@ -47,7 +47,6 @@ export type NormativaMeta = {
 };
 
 export async function extractNormativaMetaGemini(input: { file_name: string; texto: string }): Promise<NormativaMeta> {
-  const model = getGeminiFlashModel();
   const head = sample(input.texto, 18_000);
   const prompt = [
     "Eres analista legal Ecuador 2026.",
@@ -66,8 +65,7 @@ export async function extractNormativaMetaGemini(input: { file_name: string; tex
 
   let text = "";
   try {
-    const result = await model.generateContent(prompt);
-    text = result.response.text();
+    text = await generateAiText(prompt);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     if (isQuotaErrorMessage(msg)) {
@@ -75,7 +73,7 @@ export async function extractNormativaMetaGemini(input: { file_name: string; tex
       return {
         titulo_detectado: null,
         fecha_normativa_iso: null,
-        razon: `Sin cuota Gemini (reintentar en ${retry ?? 60}s).`,
+        razon: `Sin cuota IA (reintentar en ${retry ?? 60}s).`,
         confianza: 0
       };
     }
@@ -114,7 +112,6 @@ export async function compareNormativaWithGemini(input: {
     };
   }
 
-  const model = getGeminiFlashModel();
   const lista = input.existentes
     .map(
       (e, i) =>
@@ -139,8 +136,7 @@ export async function compareNormativaWithGemini(input: {
 
   let text = "";
   try {
-    const result = await model.generateContent(prompt);
-    text = result.response.text();
+    text = await generateAiText(prompt);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     if (isQuotaErrorMessage(msg)) {
@@ -150,7 +146,7 @@ export async function compareNormativaWithGemini(input: {
         doc_coincidente_id: null,
         nueva_es_mas_reciente: null,
         confianza: 0,
-        razon: `Sin cuota Gemini para comparar (reintentar en ${retry ?? 60}s).`
+        razon: `Sin cuota IA para comparar (reintentar en ${retry ?? 60}s).`
       };
     }
     return {
@@ -208,7 +204,6 @@ export async function mapNegocioNormativaGemini(input: {
   };
   documentos: { id: string; titulo: string | null; texto: string }[];
 }): Promise<{ docs: DocAplicacion[]; items: GeminiExtractionItem[] }> {
-  const model = getGeminiFlashModel();
   const docsBlock = buildDocsBlock(input.documentos, { perDocMax: 12_000, totalMax: 45_000 });
   if (!docsBlock) {
     throw new Error("MAPA_NORMATIVA_SIN_TEXTO: Los documentos no tienen texto suficiente para analizar.");
@@ -237,13 +232,12 @@ export async function mapNegocioNormativaGemini(input: {
 
   let text = "";
   try {
-    const result = await model.generateContent(prompt);
-    text = result.response.text();
+    text = await generateAiText(prompt);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     if (isQuotaErrorMessage(msg)) {
       const retry = parseRetrySeconds(msg);
-      throw new Error(`GEMINI_QUOTA: Sin cuota Gemini (reintentar en ${retry ?? 60}s).`);
+      throw new Error(`GEMINI_QUOTA: Sin cuota IA (reintentar en ${retry ?? 60}s).`);
     }
     throw new Error(`GEMINI_MAP_ERROR: ${msg}`);
   }

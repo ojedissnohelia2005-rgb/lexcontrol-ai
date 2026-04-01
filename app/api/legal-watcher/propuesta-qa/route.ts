@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getGeminiFlashModel } from "@/lib/gemini";
+import { generateAiText } from "@/lib/ai";
 
 const BodySchema = z.object({
   propuesta_id: z.string().uuid(),
@@ -23,7 +23,6 @@ export async function POST(req: Request) {
       .single();
     if (error || !p) return NextResponse.json({ error: "Propuesta no encontrada" }, { status: 404 });
 
-    const model = getGeminiFlashModel();
     const prompt = [
       "Eres asesor legal/compliance (Ecuador 2026). Responde la pregunta del usuario sobre si conviene incorporar esta propuesta a la matriz de cumplimiento.",
       "Sé claro y prudente: si no hay evidencia suficiente, dilo.",
@@ -36,8 +35,7 @@ export async function POST(req: Request) {
       body.pregunta.trim()
     ].join("\n");
 
-    const result = await model.generateContent(prompt);
-    const respuesta = result.response.text().trim();
+    const respuesta = (await generateAiText(prompt)).trim();
 
     return NextResponse.json({ respuesta });
   } catch (e: unknown) {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getGeminiFlashModel } from "@/lib/gemini";
+import { generateAiText } from "@/lib/ai";
 import { extractPdfText } from "@/lib/pdf";
 
 const JsonSchema = z.object({
@@ -52,7 +52,6 @@ export async function POST(req: Request) {
       texto = body.texto;
     }
 
-    const model = getGeminiFlashModel();
     const prompt = [
       "Eres auditor legal/compliance (Ecuador 2026). A partir del siguiente informe de auditoría externa,",
       "extrae riesgos de cumplimiento accionables para una matriz normativa.",
@@ -63,8 +62,7 @@ export async function POST(req: Request) {
       texto.slice(0, 100_000)
     ].join("\n");
 
-    const result = await model.generateContent(prompt);
-    const raw = result.response.text();
+    const raw = await generateAiText(prompt);
     const m = raw.match(/\{[\s\S]*\}/);
     if (!m) return NextResponse.json({ error: "Gemini sin JSON", raw }, { status: 502 });
     const parsed = JsonSchema.parse(JSON.parse(m[0]));

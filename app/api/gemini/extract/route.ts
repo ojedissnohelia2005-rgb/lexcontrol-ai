@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getGeminiFlashModel } from "@/lib/gemini";
+import { generateAiText } from "@/lib/ai";
 
 const BodySchema = z.object({
   texto: z.string().min(50),
@@ -43,8 +43,6 @@ export async function POST(req: Request) {
     const json = await req.json();
     const body = BodySchema.parse(json);
 
-    const model = getGeminiFlashModel();
-
     const prompt = [
       "Eres un analista legal de cumplimiento en Ecuador (2026).",
       "A partir del texto de una normativa ecuatoriana, extrae una lista de requisitos accionables para una Matriz de Cumplimiento.",
@@ -83,16 +81,15 @@ export async function POST(req: Request) {
 
     let text = "";
     try {
-      const result = await model.generateContent(prompt);
-      text = result.response.text();
+      text = await generateAiText(prompt);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       const m = msg.toLowerCase();
-      if (m.includes("429") || m.includes("quota") || m.includes("too many requests")) {
+      if (m.includes("429") || m.includes("quota") || m.includes("too many requests") || m.includes("rate limit")) {
         const retry = msg.match(/retry in ([0-9.]+)s/i)?.[1];
         return NextResponse.json(
           {
-            error: `Gemini sin cuota (429). ${retry ? `Reintenta en ~${Math.ceil(Number(retry))}s.` : "Espera y vuelve a intentar."}`,
+            error: `IA sin cuota (429). ${retry ? `Reintenta en ~${Math.ceil(Number(retry))}s.` : "Espera y vuelve a intentar."}`,
             code: "GEMINI_QUOTA",
             retry_after_seconds: retry ? Math.ceil(Number(retry)) : 60
           },
@@ -114,7 +111,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ items });
   } catch (e: unknown) {
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Error en extracción Gemini" },
+      { error: e instanceof Error ? e.message : "Error en extracción IA" },
       { status: 400 }
     );
   }

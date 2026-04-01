@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getGeminiFlashModel } from "@/lib/gemini";
+import { generateAiText } from "@/lib/ai";
 
 const BodySchema = z.object({
   negocio_id: z.string().uuid().optional(),
@@ -47,7 +47,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No hay PDFs en la memoria normativa para responder." }, { status: 400 });
     }
 
-    const model = getGeminiFlashModel();
     const prompt = [
       "Eres un asistente LegalTech para Ecuador (2026).",
       "Responde SOLO con información que esté respaldada por el CONTEXTO (PDFs).",
@@ -60,8 +59,7 @@ export async function POST(req: Request) {
       context
     ].join("\n");
 
-    const result = await model.generateContent(prompt);
-    const answer = result.response.text();
+    const answer = await generateAiText(prompt);
 
     return NextResponse.json({
       answer,

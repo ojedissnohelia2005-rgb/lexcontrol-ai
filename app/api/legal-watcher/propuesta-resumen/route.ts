@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getGeminiFlashModel } from "@/lib/gemini";
+import { generateAiText } from "@/lib/ai";
 
 const BodySchema = z.object({
   propuesta_id: z.string().uuid()
@@ -22,7 +22,6 @@ export async function POST(req: Request) {
       .single();
     if (error || !p) return NextResponse.json({ error: "Propuesta no encontrada" }, { status: 404 });
 
-    const model = getGeminiFlashModel();
     const prompt = [
       "Eres analista de cumplimiento (Ecuador 2026). Tienes una FILA PROPUESTA (posible cambio normativo / vigilancia).",
       "Entrega un resumen ejecutivo en español con:",
@@ -34,8 +33,7 @@ export async function POST(req: Request) {
       JSON.stringify(p, null, 2)
     ].join("\n");
 
-    const result = await model.generateContent(prompt);
-    const resumen = result.response.text().trim();
+    const resumen = (await generateAiText(prompt)).trim();
 
     return NextResponse.json({ resumen });
   } catch (e: unknown) {

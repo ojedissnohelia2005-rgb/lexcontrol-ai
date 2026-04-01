@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getGeminiFlashModel } from "@/lib/gemini";
+import { generateAiText } from "@/lib/ai";
 import { LEGAL_DRIVE_FOLDER_URL } from "@/lib/legal-constants";
 
 const BodySchema = z.object({
@@ -27,7 +27,6 @@ export async function POST(req: Request) {
       .single();
     if (nErr || !negocio) return NextResponse.json({ error: "Negocio no encontrado o sin acceso" }, { status: 404 });
 
-    const model = getGeminiFlashModel();
     const prompt = [
       "Eres asesor legal/compliance para Ecuador (2026).",
       "El usuario describe un negocio y actividades con regulación especial. Debes entregar una GUÍA PRÁCTICA de dónde buscar normativa y actualizaciones.",
@@ -54,8 +53,7 @@ export async function POST(req: Request) {
       "Responde en español, tono profesional, sin inventar números de ley; si no sabes un detalle, indica qué consultar en la fuente oficial. No inventes autoridades: cuando haya duda de institución, indica cómo confirmar vigencia en fuentes oficiales."
     ].join("\n");
 
-    const result = await model.generateContent(prompt);
-    const guia = result.response.text().trim();
+    const guia = (await generateAiText(prompt)).trim();
 
     if (body.guardar) {
       const { error: uErr } = await supabase

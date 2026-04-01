@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getGeminiFlashModel } from "@/lib/gemini";
+import { generateAiText } from "@/lib/ai";
 import { classifyPrioridad, computePriorityScore, estimateUsdFromSanction } from "@/lib/finance";
 
 const BodySchema = z
@@ -91,7 +91,6 @@ export async function POST(req: Request) {
         )
         .join("\n\n") || "Sin normas recientes (30 días) en la base; responde sin inventar normas.";
 
-    const model = getGeminiFlashModel();
     const prompt = [
       "Vigilancia legal Ecuador 2026 basada SOLO en normas reales de la base de datos (no inventes leyes).",
       "",
@@ -116,16 +115,15 @@ export async function POST(req: Request) {
 
     let text = "";
     try {
-      const result = await model.generateContent(prompt);
-      text = result.response.text();
+      text = await generateAiText(prompt);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       const m = msg.toLowerCase();
-      if (m.includes("429") || m.includes("quota") || m.includes("too many requests")) {
+      if (m.includes("429") || m.includes("quota") || m.includes("too many requests") || m.includes("rate limit")) {
         return NextResponse.json(
           {
             error:
-              "Cuota/Rate limit de Gemini excedido. Espera unos minutos o usa otra API key/plan. Se evitó crear alertas/propuestas.",
+              "Cuota/Rate limit de IA excedido. Espera unos minutos o usa otra API key/plan. Se evitó crear alertas/propuestas.",
             code: "GEMINI_QUOTA",
             retry_after_seconds: 60
           },
