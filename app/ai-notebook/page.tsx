@@ -50,12 +50,17 @@ export default function AiNotebookPage() {
 
   const loadNormativaDocs = useCallback(async () => {
     if (!supabase || !negocioId) return;
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("normativa_docs")
       .select("id,titulo,created_at,sha256,es_base_sistema")
-      .or(`negocio_id.eq.${negocioId},negocio_id.is.null`)
+      .eq("negocio_id", negocioId)
       .order("created_at", { ascending: false });
-    setNormativaDocs((data ?? []) as NormativaRow[]);
+    if (error) {
+      setError(error.message);
+      setNormativaDocs([]);
+    } else {
+      setNormativaDocs((data ?? []) as NormativaRow[]);
+    }
   }, [supabase, negocioId]);
 
   useEffect(() => {
