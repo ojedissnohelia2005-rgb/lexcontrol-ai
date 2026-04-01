@@ -53,7 +53,7 @@ export default function AiNotebookPage() {
     const { data } = await supabase
       .from("normativa_docs")
       .select("id,titulo,created_at,sha256,es_base_sistema")
-      .eq("negocio_id", negocioId)
+      .or(`negocio_id.eq.${negocioId},negocio_id.is.null`)
       .order("created_at", { ascending: false });
     setNormativaDocs((data ?? []) as NormativaRow[]);
   }, [supabase, negocioId]);
