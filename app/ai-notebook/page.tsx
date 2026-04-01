@@ -342,7 +342,7 @@ export default function AiNotebookPage() {
         . Descarga desde ahí y súbela aquí para que quede en la <strong>base del sistema</strong> (Supabase Storage + memoria). La sincronización automática con Google Drive no está conectada: esta app es la fuente de verdad interna; tras autorizar un reemplazo, actualizamos el registro/PDF guardado aquí.
       </div>
 
-      <div className="mt-6 rounded-2xl bg-white p-6 shadow-card ring-1 ring-borderSoft">
+      <div className="mt-6 rounded-2xl bg-white/95 p-6 shadow-card ring-1 ring-borderSoft backdrop-blur">
         <div className="text-sm font-medium">Origen de la información</div>
         <div className="mt-3 flex flex-wrap gap-3">
           <label className="flex cursor-pointer items-center gap-2 rounded-xl bg-cream px-4 py-2 text-sm ring-1 ring-borderSoft has-[:checked]:ring-2 has-[:checked]:ring-sidebarRose">
@@ -357,7 +357,7 @@ export default function AiNotebookPage() {
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="rounded-2xl bg-white p-6 shadow-card ring-1 ring-borderSoft lg:col-span-1">
+        <div className="rounded-2xl bg-white/95 p-6 shadow-card ring-1 ring-borderSoft lg:col-span-1">
           <div className="text-sm font-medium">Negocio activo</div>
           <div className="mt-3">
             <select
@@ -486,7 +486,7 @@ export default function AiNotebookPage() {
           {mapMsg ? <div className="mt-3 rounded-xl bg-green-50 px-3 py-2 text-xs text-green-900 ring-1 ring-green-200">{mapMsg}</div> : null}
         </div>
 
-        <div className="rounded-2xl bg-white p-6 shadow-card ring-1 ring-borderSoft lg:col-span-2">
+        <div className="rounded-2xl bg-white/95 p-6 shadow-card ring-1 ring-borderSoft lg:col-span-2">
           <div className="flex items-center justify-between">
             <div>
               <div className="text-sm font-medium">Última extracción (subir PDF)</div>

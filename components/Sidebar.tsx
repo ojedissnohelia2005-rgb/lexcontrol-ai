@@ -77,9 +77,9 @@ export function Sidebar() {
                 href={href}
                 className={cn(
                   "flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition",
-                  "hover:bg-cream/10",
-                  active && "bg-cream/15 ring-1 ring-cream/10",
-                  isNotif && hasUnread && !active && "bg-red-500/70 text-white"
+                  "hover:bg-cream/10 hover:translate-x-0.5",
+                  active && "bg-cream/20 ring-1 ring-cream/20 shadow-sm",
+                  isNotif && hasUnread && !active && "bg-red-500/75 text-white shadow-sm"
                 )}
               >
                 <Icon className="h-5 w-5 text-cream/90" />

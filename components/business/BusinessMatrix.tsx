@@ -344,7 +344,7 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
         </div>
       ) : null}
 
-      <div className="rounded-2xl bg-white p-6 shadow-card ring-1 ring-borderSoft">
+      <div className="rounded-2xl bg-white/95 p-6 shadow-card ring-1 ring-borderSoft backdrop-blur">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="text-sm font-medium">Matriz de Cumplimiento</div>
@@ -376,10 +376,10 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
           </div>
         </div>
 
-        <div className="mt-4 overflow-x-auto rounded-2xl ring-1 ring-borderSoft">
+        <div className="mt-4 overflow-x-auto rounded-2xl bg-cream/40 ring-1 ring-borderSoft">
           <table className="w-full text-left text-sm">
-            <thead className="bg-cream">
-              <tr className="text-xs text-charcoal/70">
+            <thead className="bg-cream/80">
+              <tr className="text-xs font-medium uppercase tracking-wide text-charcoal/70">
                 <th className="px-4 py-3">Tipo</th>
                 <th className="px-4 py-3">Norma</th>
                 <th className="px-4 py-3">Fecha pub.</th>
@@ -657,7 +657,10 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
             const prioridad = p.prioridad ?? classifyPrioridad({ sancion: p.sancion, multa_estimada_usd: multa, priorityScore: score });
             const vig = esVigilancia(p.extra);
             return (
-              <div key={p.id} className="rounded-2xl bg-cream p-4 ring-1 ring-borderSoft">
+              <div
+                key={p.id}
+                className="rounded-2xl bg-cream/90 p-4 ring-1 ring-borderSoft shadow-sm transition hover:bg-cream hover:shadow-md"
+              >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div className="flex flex-wrap items-center gap-2">

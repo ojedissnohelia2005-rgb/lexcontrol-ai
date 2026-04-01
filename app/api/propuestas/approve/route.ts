@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { isSuperAdminSession } from "@/lib/auth-server";
 
 const BodySchema = z.object({
   propuesta_id: z.string().uuid()
@@ -13,8 +12,11 @@ export async function POST(req: Request) {
     const { data: userData } = await supabase.auth.getUser();
     if (!userData.user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
 
-    const okAdmin = await isSuperAdminSession(supabase, userData.user.id, userData.user.email);
-    if (!okAdmin) return NextResponse.json({ error: "Solo Super Admin puede aprobar" }, { status: 403 });
+    const { data: me } = await supabase.from("profiles").select("rol").eq("id", userData.user.id).maybeSingle();
+    const rol = String((me as { rol?: string } | null)?.rol ?? "user");
+    if (rol !== "admin" && rol !== "super_admin") {
+      return NextResponse.json({ error: "Solo admin / super admin puede aprobar propuestas" }, { status: 403 });
+    }
 
     const body = BodySchema.parse(await req.json());
 

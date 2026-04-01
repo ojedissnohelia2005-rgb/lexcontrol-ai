@@ -53,7 +53,7 @@ export function PdfQnA({ negocioId }: { negocioId: string | null }) {
   }
 
   return (
-    <div className="rounded-2xl bg-white p-6 shadow-card ring-1 ring-borderSoft">
+    <div className="rounded-2xl bg-white/95 p-6 shadow-card ring-1 ring-borderSoft backdrop-blur">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-sm font-medium">Preguntas sobre normativa (Memoria)</div>
