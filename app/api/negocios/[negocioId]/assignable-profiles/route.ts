@@ -30,13 +30,33 @@ export async function GET(_req: Request, ctx: RouteCtx) {
     const { data: acc } = await admin.from("negocio_accesos").select("profile_id").eq("negocio_id", negocioId);
     for (const a of acc ?? []) ids.add(a.profile_id);
 
-    const { data: profiles } = await admin
+    // Admins y super_admins pueden ser supervisores en cualquier negocio.
+    const { data: admins } = await admin
+      .from("profiles")
+      .select("id,email,nombre,rol")
+      .in("rol", ["admin", "super_admin"]);
+
+    const uniqueById = new Map<string, { id: string; email: string; nombre: string | null; rol: string | null }>();
+
+    if (admins) {
+      for (const a of admins as any[]) {
+        uniqueById.set(a.id, a);
+      }
+    }
+
+    const { data: negocioProfiles } = await admin
       .from("profiles")
       .select("id,email,nombre,rol")
       .in("id", [...ids])
       .order("email");
 
-    return NextResponse.json({ profiles: profiles ?? [] });
+    if (negocioProfiles) {
+      for (const p of negocioProfiles as any[]) {
+        uniqueById.set(p.id, p);
+      }
+    }
+
+    return NextResponse.json({ profiles: Array.from(uniqueById.values()) });
   } catch {
     const { data: self } = await supabase.from("profiles").select("id,email,nombre,rol").eq("id", userData.user.id).maybeSingle();
     return NextResponse.json({ profiles: self ? [self] : [], limited: true });
