@@ -47,6 +47,7 @@ function NotificacionesClient() {
     supabase
       .from("alertas_legales")
       .select("id,created_at,titulo,resumen,link_oficial")
+      .or("revisado.is.null,revisado.eq.false")
       .order("created_at", { ascending: false })
       .limit(20)
       .then(({ data }) => setAlertas((data ?? []) as Alerta[]));
@@ -71,6 +72,7 @@ function NotificacionesClient() {
     supabase
       .from("alertas_actualizacion_normativa")
       .select("id,created_at,normativa_doc_id,tiene_posible_actualizacion,comentario,nivel_confianza")
+      .or("revisado.is.null,revisado.eq.false")
       .order("created_at", { ascending: false })
       .limit(20)
       .then(({ data }) => setActualizaciones((data ?? []) as AlertaActualizacion[]));

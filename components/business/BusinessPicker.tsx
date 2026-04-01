@@ -26,6 +26,8 @@ export function BusinessPicker({
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [items, setItems] = useState<Negocio[]>([]);
+  const [canAdmin, setCanAdmin] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const [nombre, setNombre] = useState("");
   const [sector, setSector] = useState("");
@@ -53,6 +55,43 @@ export function BusinessPicker({
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    if (!supabase) return;
+    supabase.auth.getUser().then(async ({ data }) => {
+      const uid = data.user?.id;
+      if (!uid) return setCanAdmin(false);
+      const { data: p } = await supabase.from("profiles").select("rol").eq("id", uid).maybeSingle();
+      const r = String((p as { rol?: string } | null)?.rol ?? "");
+      setCanAdmin(r === "admin" || r === "super_admin");
+    });
+  }, [supabase]);
+
+  async function eliminarNegocio(id: string) {
+    if (!supabase || !canAdmin) return;
+    const ok = window.confirm(
+      "Vas a eliminar este negocio y su matriz asociada (normativa, propuestas, actividades, etc.). Esta acción no se puede deshacer. ¿Continuar?"
+    );
+    if (!ok) return;
+    setDeletingId(id);
+    try {
+      const res = await fetch(`/api/negocios/${id}/delete`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ confirm: true })
+      });
+      const data = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || data.error) throw new Error(data.error ?? "No se pudo eliminar el negocio");
+      if (getSelectedNegocioId() === id) {
+        window.localStorage.removeItem(STORAGE_KEY);
+      }
+      await load();
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "Error eliminando negocio");
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   async function create() {
     setError(null);
@@ -192,27 +231,42 @@ export function BusinessPicker({
 
           {items.map((n) => {
             const active = selectedId === n.id;
+            const isDeleting = deletingId === n.id;
             return (
-              <button
+              <div
                 key={n.id}
                 className={[
-                  "w-full rounded-2xl px-4 py-3 text-left ring-1 transition",
+                  "flex items-center justify-between gap-3 rounded-2xl px-4 py-3 ring-1 transition",
                   active ? "bg-cream ring-roseOld" : "bg-white ring-borderSoft hover:bg-cream/40"
                 ].join(" ")}
-                onClick={() => {
-                  setSelectedNegocioId(n.id);
-                  if (onSelected) onSelected(n.id);
-                  else window.location.href = `/business/${n.id}`;
-                }}
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold">{n.nombre}</div>
-                    <div className="mt-1 text-xs text-charcoal/60">{n.sector ?? "—"}</div>
+                <button
+                  className="flex-1 text-left"
+                  onClick={() => {
+                    setSelectedNegocioId(n.id);
+                    if (onSelected) onSelected(n.id);
+                    else window.location.href = `/business/${n.id}`;
+                  }}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold">{n.nombre}</div>
+                      <div className="mt-1 text-xs text-charcoal/60">{n.sector ?? "—"}</div>
+                    </div>
+                    <div className="text-xs text-charcoal/60">{active ? "Seleccionado" : "Seleccionar"}</div>
                   </div>
-                  <div className="text-xs text-charcoal/60">{active ? "Seleccionado" : "Seleccionar"}</div>
-                </div>
-              </button>
+                </button>
+                {canAdmin ? (
+                  <button
+                    type="button"
+                    disabled={isDeleting}
+                    onClick={() => void eliminarNegocio(n.id)}
+                    className="shrink-0 rounded-xl bg-white px-3 py-1.5 text-xs text-red-700 ring-1 ring-borderSoft hover:bg-cream/70 disabled:opacity-50"
+                  >
+                    {isDeleting ? "Eliminando…" : "Eliminar"}
+                  </button>
+                ) : null}
+              </div>
             );
           })}
         </div>

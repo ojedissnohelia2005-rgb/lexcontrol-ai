@@ -27,6 +27,7 @@ export function RubroYRegulacionPanel({ negocioId }: { negocioId: string }) {
   const [canAdmin, setCanAdmin] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
 
+  const [detalles, setDetalles] = useState("");
   const [regulacion, setRegulacion] = useState("");
   const [notaActualizar, setNotaActualizar] = useState("");
   const [urlsActualizar, setUrlsActualizar] = useState("");
@@ -47,6 +48,7 @@ export function RubroYRegulacionPanel({ negocioId }: { negocioId: string }) {
       if (e) throw e;
       const n = data as NegocioRow;
       setRow(n);
+      setDetalles(n.detalles_negocio ?? "");
       setRegulacion(n.regulacion_actividades_especiales ?? "");
       setNotaActualizar(n.normativa_actualizar_nota ?? "");
       setUrlsActualizar(n.normativa_actualizar_urls ?? "");
@@ -86,6 +88,7 @@ export function RubroYRegulacionPanel({ negocioId }: { negocioId: string }) {
       const { error: e } = await supabase
         .from("negocios")
         .update({
+          detalles_negocio: detalles.trim() || null,
           regulacion_actividades_especiales: regulacion.trim() || null,
           normativa_actualizar_nota: notaActualizar.trim() || null,
           normativa_actualizar_urls: urlsActualizar.trim() || null
@@ -173,6 +176,20 @@ export function RubroYRegulacionPanel({ negocioId }: { negocioId: string }) {
         <div className="mt-4 text-sm text-charcoal/60">Cargando...</div>
       ) : (
         <div className="mt-4 space-y-4">
+          <label className="block">
+            <div className="text-sm font-medium">Descripción general del negocio (para la IA)</div>
+            <div className="mt-1 text-xs text-charcoal/60">
+              Resumen ejecutivo de qué hace el negocio, clientes, operaciones clave, ubicaciones, etc. La IA lo usa como contexto base antes de ver PDFs.
+            </div>
+            <textarea
+              className="mt-2 min-h-[100px] w-full rounded-xl bg-cream px-3 py-2 text-sm ring-1 ring-borderSoft outline-none focus:ring-2 focus:ring-roseOld disabled:opacity-60"
+              value={detalles}
+              onChange={(e) => setDetalles(e.target.value)}
+              placeholder="Ej.: Comercialización y transporte de GLP a nivel nacional; estaciones de servicio en ..."
+              disabled={!canAdmin}
+            />
+          </label>
+
           <label className="block">
             <div className="text-sm font-medium">Actividades y regulación especial</div>
             <div className="mt-1 text-xs text-charcoal/60">

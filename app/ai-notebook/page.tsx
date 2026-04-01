@@ -376,10 +376,12 @@ export default function AiNotebookPage() {
               ))}
             </select>
           </div>
-          <div className="mt-3 rounded-xl bg-cream px-3 py-3 text-xs text-charcoal/70 ring-1 ring-borderSoft">
+          <div className="mt-3 max-h-64 overflow-y-auto rounded-xl bg-cream px-3 py-3 text-xs text-charcoal/70 ring-1 ring-borderSoft">
             <div className="font-medium text-charcoal/80">{negocio?.nombre ?? "—"}</div>
             <div className="mt-1">Sector: {negocio?.sector ?? "—"}</div>
-            <div className="mt-1 whitespace-pre-wrap">Detalles: {negocio?.detalles_negocio ?? "—"}</div>
+            <div className="mt-1 whitespace-pre-wrap">
+              {negocio?.detalles_negocio ?? "Sin descripción detallada aún. Puedes completarla en la pantalla del negocio para que la IA tenga más contexto."}
+            </div>
           </div>
 
           {fuente === "memoria" ? (
