@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isSuperAdminEmail } from "@/lib/roles";
+import { AppHelpPopover } from "@/components/AppHelpPopover";
 
 export function Topbar() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
@@ -35,8 +36,11 @@ export function Topbar() {
           <code className="rounded bg-white/80 px-1">NEXT_PUBLIC_DEMO_MODE=false</code> para producción.
         </div>
       ) : null}
-      <div className="text-sm text-charcoal/70">
-        <span className="font-medium text-charcoal">LexControl AI</span> · Matriz de Cumplimiento Normativo Inteligente
+      <div className="flex items-center gap-3 text-sm text-charcoal/70">
+        <span>
+          <span className="font-medium text-charcoal">LexControl AI</span> · Matriz de Cumplimiento Normativo Inteligente
+        </span>
+        <AppHelpPopover />
       </div>
       <div className="flex items-center gap-3">
         {!supabase ? (
