@@ -170,10 +170,6 @@ export function RubroYRegulacionPanel({ negocioId }: { negocioId: string }) {
         ) : null}
       </div>
 
-      {error && !row ? (
-        <div className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-200">{error}</div>
-      ) : null}
-
       {loading ? (
         <div className="mt-4 text-sm text-charcoal/60">Cargando...</div>
       ) : (
