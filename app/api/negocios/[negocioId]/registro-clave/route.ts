@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { isSuperAdminEmail } from "@/lib/roles";
 
 type RouteCtx = { params: Promise<{ negocioId: string }> };
 
@@ -24,7 +25,9 @@ export async function POST(req: Request, ctx: RouteCtx) {
 
   const { data: me } = await supabase.from("profiles").select("rol").eq("id", userData.user.id).maybeSingle();
   const rol = String((me as { rol?: string } | null)?.rol ?? "");
-  if (rol !== "admin" && rol !== "super_admin") {
+  const isAdminRole = rol === "admin" || rol === "super_admin";
+  const isGlobalSuper = isSuperAdminEmail(userData.user.email);
+  if (!isAdminRole && !isGlobalSuper) {
     return NextResponse.json({ error: "Solo admin/super_admin puede generar claves de registro" }, { status: 403 });
   }
 
