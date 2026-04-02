@@ -308,6 +308,27 @@ export function RubroYRegulacionPanel({ negocioId }: { negocioId: string }) {
               <div className="mt-3">
                 <MarkdownGuide markdown={(guiaPreview ?? row?.guia_fuentes_ia) as string} />
               </div>
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-white/70 px-3 py-3 text-xs text-charcoal/70 ring-1 ring-borderSoft">
+                <div>
+                  <div className="font-medium text-charcoal/80">¿Generar sugerencias para la matriz?</div>
+                  <div className="mt-1">
+                    Puedes pasar al cuaderno de IA para que, usando esta guía y la normativa en memoria, identifique artículos aplicables y cree propuestas
+                    automáticas.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="rounded-xl bg-sidebarRose px-4 py-2 text-xs font-medium text-cream hover:opacity-90"
+                  onClick={() => {
+                    if (typeof window !== "undefined") {
+                      window.localStorage.setItem("lexcontrol:selected_negocio_id", negocioId);
+                      window.location.href = "/ai-notebook";
+                    }
+                  }}
+                >
+                  Sí, ir a IA Notebook
+                </button>
+              </div>
             </div>
           ) : (
             <div className="rounded-xl bg-cream px-3 py-3 text-xs text-charcoal/60 ring-1 ring-borderSoft">

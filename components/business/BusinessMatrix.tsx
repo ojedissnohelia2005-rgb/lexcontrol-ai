@@ -393,8 +393,8 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
                 <th className="px-4 py-3">Sanción</th>
                 <th className="px-4 py-3">Multa Estimada</th>
                 <th className="px-4 py-3">Proceso/Actividad</th>
-                <th className="px-4 py-3">Sponsor</th>
-                <th className="px-4 py-3">Resp. Proceso</th>
+                <th className="px-4 py-3">Gerencia</th>
+                <th className="px-4 py-3">Jefatura resp. proceso</th>
                 <th className="px-4 py-3">Documentación</th>
                 <th className="px-4 py-3">Responsable</th>
                 <th className="px-4 py-3">Prioridad</th>
@@ -509,7 +509,7 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
                       value={r.sponsor ?? ""}
                       disabled={!canEditResponsable}
                       onChange={(e) => void updateRow(r.id, { sponsor: e.target.value || null } as any)}
-                      placeholder="Sponsor"
+                      placeholder="Gerencia responsable"
                     />
                   </td>
                   <td className="px-4 py-3 min-w-[200px]">
@@ -518,7 +518,7 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
                       value={r.responsable_proceso ?? ""}
                       disabled={!canEditResponsable}
                       onChange={(e) => void updateRow(r.id, { responsable_proceso: e.target.value || null } as any)}
-                      placeholder="Responsable de proceso"
+                      placeholder="Jefatura responsable del proceso"
                     />
                   </td>
                   <td className="px-4 py-3 min-w-[240px]">

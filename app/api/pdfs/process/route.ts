@@ -82,9 +82,32 @@ export async function POST(req: Request) {
         fecha_normativa: meta.fecha_normativa_iso,
         created_by: userData.user.id
       })
-      .select("id")
+      .select("id,created_at,titulo")
       .single();
     if (nErr) return NextResponse.json({ error: nErr.message }, { status: 400 });
+
+    // Si hay otras normas en este negocio con el mismo título, conserva la más reciente y elimina las anteriores.
+    try {
+      if (tituloDetectado) {
+        const { data: dupes } = await supabase
+          .from("normativa_docs")
+          .select("id,created_at")
+          .eq("negocio_id", negocio_id)
+          .neq("id", inserted.id)
+          .ilike("titulo", tituloDetectado);
+        const all = [...(dupes ?? []), { id: inserted.id, created_at: inserted.created_at }] as { id: string; created_at: string }[];
+        if (all.length > 1) {
+          all.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+          const keep = all[all.length - 1]!.id;
+          const toDelete = all.filter((d) => d.id !== keep).map((d) => d.id);
+          if (toDelete.length > 0) {
+            await supabase.from("normativa_docs").delete().in("id", toDelete);
+          }
+        }
+      }
+    } catch {
+      // si falla la limpieza de duplicados por título, no rompemos el flujo principal
+    }
 
     const { data: siblings } = await supabase
       .from("normativa_docs")
