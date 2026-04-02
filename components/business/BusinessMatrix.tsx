@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { estimateUsdFromSanction, classifyPrioridad, computePriorityScore } from "@/lib/finance";
 import { isSuperAdminEmail } from "@/lib/roles";
+import { IaMarkdownStream } from "@/components/IaMarkdownStream";
 
 type Row = {
   id: string;
@@ -797,7 +798,7 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
                 Cerrar
               </button>
             </div>
-            <div className="mt-2 whitespace-pre-wrap text-sm text-charcoal/90">{iaPanel.texto}</div>
+            <IaMarkdownStream streamKey={`${iaPanel.propuestaId}:${iaPanel.titulo}`} markdown={iaPanel.texto} />
           </div>
         ) : null}
 

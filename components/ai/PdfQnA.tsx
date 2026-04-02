@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { IaMarkdownStream } from "@/components/IaMarkdownStream";
 
 type DocMini = { id: string; titulo: string | null; fuente_url: string | null; storage_path: string | null; created_at: string };
 
@@ -14,6 +15,7 @@ export function PdfQnA({ negocioId }: { negocioId: string | null }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [answer, setAnswer] = useState<string | null>(null);
+  const [answerStreamId, setAnswerStreamId] = useState(0);
 
   useEffect(() => {
     if (!negocioId) return;
@@ -44,6 +46,7 @@ export function PdfQnA({ negocioId }: { negocioId: string | null }) {
       });
       const data = (await res.json()) as { answer?: string; error?: string };
       if (!res.ok || data.error) throw new Error(data.error ?? "No se pudo responder");
+      setAnswerStreamId((n) => n + 1);
       setAnswer(data.answer ?? "");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Error");
@@ -124,7 +127,9 @@ export function PdfQnA({ negocioId }: { negocioId: string | null }) {
       </button>
 
       {answer ? (
-        <div className="mt-4 whitespace-pre-wrap rounded-2xl bg-cream px-4 py-4 text-sm ring-1 ring-borderSoft">{answer}</div>
+        <div className="mt-4">
+          <IaMarkdownStream markdown={answer} streamKey={`pdfqa-${answerStreamId}`} />
+        </div>
       ) : null}
     </div>
   );
