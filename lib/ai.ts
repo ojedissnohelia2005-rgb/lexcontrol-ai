@@ -14,13 +14,17 @@ function getClient() {
   return client;
 }
 
-export async function generateAiText(prompt: string): Promise<string> {
+export async function generateAiText(
+  prompt: string,
+  opts?: { maxOutputTokens?: number }
+): Promise<string> {
   const openai = getClient();
   const model = process.env.OPENAI_MODEL?.trim() || DEFAULT_MODEL;
 
   const response = await openai.responses.create({
     model,
-    input: prompt
+    input: prompt,
+    ...(opts?.maxOutputTokens != null ? { max_output_tokens: opts.maxOutputTokens } : {})
   });
 
   const first = response.output ? response.output[0] : null;

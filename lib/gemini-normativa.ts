@@ -1,4 +1,9 @@
 import { generateAiText } from "@/lib/ai";
+import {
+  extractFirstBalancedJsonObject,
+  salvageJsonArraysFromMapResponse,
+  stripAiMarkdownFences
+} from "@/lib/ai-json";
 import type { GeminiExtractionItem } from "@/app/api/gemini/extract/route";
 import type { ComparacionNormativa } from "@/types/domain";
 
@@ -34,9 +39,44 @@ function buildDocsBlock(
   return out.trim();
 }
 
-function normalizeGeminiJson(text: string) {
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  return jsonMatch?.[0] ?? null;
+export type DocAplicacion = { doc_id: string; aplica: boolean; motivo: string };
+
+function parseMapNegocioAiPayload(text: string): { docs: DocAplicacion[]; items: GeminiExtractionItem[] } {
+  const root = extractFirstBalancedJsonObject(text);
+  if (root) {
+    try {
+      const p = JSON.parse(root) as { docs?: DocAplicacion[]; items?: GeminiExtractionItem[] };
+      if (Array.isArray(p.docs)) {
+        return { docs: p.docs, items: Array.isArray(p.items) ? p.items : [] };
+      }
+    } catch {
+      /* intentar salvage */
+    }
+  }
+  const { docsJson, itemsJson } = salvageJsonArraysFromMapResponse(text);
+  let docs: DocAplicacion[] = [];
+  let items: GeminiExtractionItem[] = [];
+  if (docsJson) {
+    try {
+      const d = JSON.parse(docsJson);
+      if (Array.isArray(d)) docs = d as DocAplicacion[];
+    } catch {
+      /* noop */
+    }
+  }
+  if (itemsJson) {
+    try {
+      const it = JSON.parse(itemsJson);
+      if (Array.isArray(it)) items = it as GeminiExtractionItem[];
+    } catch {
+      /* noop */
+    }
+  }
+  if (docs.length === 0 && items.length === 0) {
+    const preview = sample(stripAiMarkdownFences(text), 600);
+    throw new Error(`GEMINI_BAD_JSON: No se pudo parsear JSON. Respuesta=${preview}`);
+  }
+  return { docs, items };
 }
 
 export type NormativaMeta = {
@@ -91,11 +131,11 @@ export async function extractNormativaMetaGemini(input: { file_name: string; tex
       confianza: 0
     };
   }
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch)
+  const jsonStr = extractFirstBalancedJsonObject(text);
+  if (!jsonStr)
     return { titulo_detectado: null, fecha_normativa_iso: null, clasificacion_documento: null, razon: "Sin JSON", confianza: 0 };
   try {
-    const p = JSON.parse(jsonMatch[0]) as Partial<NormativaMeta>;
+    const p = JSON.parse(jsonStr) as Partial<NormativaMeta>;
     const t = typeof p.titulo_detectado === "string" ? p.titulo_detectado.trim() : null;
     const f = typeof p.fecha_normativa_iso === "string" ? p.fecha_normativa_iso.trim() : null;
     const allowed = new Set(["ley", "reglamento", "decreto", "resolucion", "otro"]);
@@ -179,8 +219,8 @@ export async function compareNormativaWithGemini(input: {
       razon: "No se pudo analizar comparación automática."
     };
   }
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
+  const jsonStr = extractFirstBalancedJsonObject(text);
+  if (!jsonStr) {
     return {
       relacion: "INDEPENDIENTE",
       doc_coincidente_id: null,
@@ -191,7 +231,7 @@ export async function compareNormativaWithGemini(input: {
   }
 
   try {
-    const p = JSON.parse(jsonMatch[0]) as ComparacionNormativa;
+    const p = JSON.parse(jsonStr) as ComparacionNormativa;
     const rel = p.relacion ?? "INDEPENDIENTE";
     const relacion =
       rel === "MISMA_NORMA" || rel === "ACTUALIZACION" || rel === "INDEPENDIENTE" ? rel : "INDEPENDIENTE";
@@ -212,8 +252,6 @@ export async function compareNormativaWithGemini(input: {
     };
   }
 }
-
-export type DocAplicacion = { doc_id: string; aplica: boolean; motivo: string };
 
 export async function mapNegocioNormativaGemini(input: {
   negocio: {
@@ -249,6 +287,7 @@ export async function mapNegocioNormativaGemini(input: {
     "sponsor y gerencia_competente: mismo texto; responsable_proceso y area_competente: mismo texto (gerencia vs jefatura/área).",
     "Devuelve minimo: docs (uno por cada DOC incluido) e items (puede ser []).",
     "Si un DOC no aplica: aplica=false y NO generes items de ese DOC.",
+    "FORMATO CRÍTICO: responde SOLO con un objeto JSON válido. No uses markdown, no uses ``` ni bloques de código, ni texto antes o después del JSON.",
     "",
     `NEGOCIO nombre=${input.negocio.nombre ?? "—"} sector=${input.negocio.sector ?? "—"}`,
     `detalles=${input.negocio.detalles ?? "—"}`,
@@ -262,7 +301,7 @@ export async function mapNegocioNormativaGemini(input: {
 
   let text = "";
   try {
-    text = await generateAiText(prompt);
+    text = await generateAiText(prompt, { maxOutputTokens: 16_384 });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     if (isQuotaErrorMessage(msg)) {
@@ -271,15 +310,5 @@ export async function mapNegocioNormativaGemini(input: {
     }
     throw new Error(`GEMINI_MAP_ERROR: ${msg}`);
   }
-  const json = normalizeGeminiJson(text);
-  if (!json) throw new Error(`GEMINI_BAD_RESPONSE: Sin JSON. Respuesta=${sample(text, 600)}`);
-
-  try {
-    const p = JSON.parse(json) as { docs?: DocAplicacion[]; items?: GeminiExtractionItem[] };
-    const docs = Array.isArray(p.docs) ? p.docs : [];
-    const items = Array.isArray(p.items) ? p.items : [];
-    return { docs, items };
-  } catch {
-    throw new Error(`GEMINI_BAD_JSON: No se pudo parsear JSON. Respuesta=${sample(text, 600)}`);
-  }
+  return parseMapNegocioAiPayload(text);
 }

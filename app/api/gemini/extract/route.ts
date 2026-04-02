@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { generateAiText } from "@/lib/ai";
+import { extractFirstBalancedJsonObject } from "@/lib/ai-json";
 import { propagateObligacionResumenConsolidado } from "@/lib/obligacion-grupo";
 import { normalizeOrganizacion4 } from "@/lib/matriz-gerencia-jefatura";
 import { itemDebeDescartarsePorHeuristica } from "@/lib/extract-applicability-heuristic";
@@ -157,13 +158,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: msg }, { status: 502 });
     }
 
-    // Best-effort JSON extraction
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
+    const jsonStr = extractFirstBalancedJsonObject(text);
+    if (!jsonStr) {
       return NextResponse.json({ error: "Gemini no devolvió JSON", raw: text }, { status: 502 });
     }
-
-    const parsed = JSON.parse(jsonMatch[0]) as { items?: GeminiExtractionItem[] };
+    let parsed: { items?: GeminiExtractionItem[] };
+    try {
+      parsed = JSON.parse(jsonStr) as { items?: GeminiExtractionItem[] };
+    } catch {
+      return NextResponse.json({ error: "JSON inválido (reintenta o recorta el PDF)", raw: text }, { status: 502 });
+    }
     const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
 
     let items = rawItems;
