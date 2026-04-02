@@ -126,6 +126,7 @@ create table if not exists public.normativa_docs (
   id uuid primary key default gen_random_uuid(),
   negocio_id uuid references public.negocios(id) on delete set null,
   titulo text,
+  clasificacion_documento text,
   fuente_url text,
   storage_path text,
   mime_type text,

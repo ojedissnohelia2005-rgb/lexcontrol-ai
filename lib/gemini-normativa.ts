@@ -42,6 +42,8 @@ function normalizeGeminiJson(text: string) {
 export type NormativaMeta = {
   titulo_detectado: string | null;
   fecha_normativa_iso: string | null; // YYYY-MM-DD
+  /** ley | reglamento | decreto | resolucion | otro */
+  clasificacion_documento: string | null;
   razon: string;
   confianza: number; // 0-1
 };
@@ -52,9 +54,10 @@ export async function extractNormativaMetaGemini(input: { file_name: string; tex
     "Eres analista legal Ecuador 2026.",
     "A partir del encabezado/primera página de un documento normativo, detecta el NOMBRE real de la norma (título oficial) y, si existe, la fecha de expedición/publicación.",
     "Responde SOLO JSON con la forma:",
-    '{"titulo_detectado":string|null,"fecha_normativa_iso":"YYYY-MM-DD"|null,"razon":"breve","confianza":0-1}',
+    '{"titulo_detectado":string|null,"fecha_normativa_iso":"YYYY-MM-DD"|null,"clasificacion_documento":"ley"|"reglamento"|"decreto"|"resolucion"|"otro"|null,"razon":"breve","confianza":0-1}',
     "Reglas:",
-    "- titulo_detectado: sin asteriscos, sin markdown, lo más oficial posible. Si no es claro, null.",
+    "- titulo_detectado: nombre oficial (primera línea o encabezado). Sin asteriscos ni markdown. Si no es claro, null.",
+    "- clasificacion_documento: ley (código/ley orgánica), reglamento (reglamento general/orgánico), decreto ejecutivo, resolución/ministerial, u otro según el documento.",
     "- fecha_normativa_iso: solo si se identifica claramente una fecha; si no, null.",
     "- Usa file_name solo como pista secundaria.",
     "",
@@ -73,26 +76,43 @@ export async function extractNormativaMetaGemini(input: { file_name: string; tex
       return {
         titulo_detectado: null,
         fecha_normativa_iso: null,
+        clasificacion_documento: null,
         razon: `Sin cuota IA (reintentar en ${retry ?? 60}s).`,
         confianza: 0
       };
     }
-    return { titulo_detectado: null, fecha_normativa_iso: null, razon: "Error consultando IA", confianza: 0 };
+    return {
+      titulo_detectado: null,
+      fecha_normativa_iso: null,
+      clasificacion_documento: null,
+      razon: "Error consultando IA",
+      confianza: 0
+    };
   }
   const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) return { titulo_detectado: null, fecha_normativa_iso: null, razon: "Sin JSON", confianza: 0 };
+  if (!jsonMatch)
+    return { titulo_detectado: null, fecha_normativa_iso: null, clasificacion_documento: null, razon: "Sin JSON", confianza: 0 };
   try {
     const p = JSON.parse(jsonMatch[0]) as Partial<NormativaMeta>;
     const t = typeof p.titulo_detectado === "string" ? p.titulo_detectado.trim() : null;
     const f = typeof p.fecha_normativa_iso === "string" ? p.fecha_normativa_iso.trim() : null;
+    const allowed = new Set(["ley", "reglamento", "decreto", "resolucion", "otro"]);
+    const cRaw = typeof p.clasificacion_documento === "string" ? p.clasificacion_documento.trim().toLowerCase() : null;
+    const c =
+      cRaw === "resolución"
+        ? "resolucion"
+        : cRaw && allowed.has(cRaw)
+          ? cRaw
+          : null;
     return {
       titulo_detectado: t && t.length >= 6 ? t : null,
       fecha_normativa_iso: f && /^\d{4}-\d{2}-\d{2}$/.test(f) ? f : null,
+      clasificacion_documento: c,
       razon: typeof p.razon === "string" ? p.razon : "",
       confianza: typeof p.confianza === "number" ? p.confianza : 0
     };
   } catch {
-    return { titulo_detectado: null, fecha_normativa_iso: null, razon: "Error parseando", confianza: 0 };
+    return { titulo_detectado: null, fecha_normativa_iso: null, clasificacion_documento: null, razon: "Error parseando", confianza: 0 };
   }
 }
 
@@ -215,8 +235,10 @@ export async function mapNegocioNormativaGemini(input: {
     "2) Para los que apliquen (o fragmentos relevantes), extrae items de matriz de cumplimiento como en extracción legal.",
     "",
     "Salida SOLO JSON:",
-    '{"docs":[{"doc_id":"uuid","aplica":true|false,"motivo":"..."}],"items":[{"articulo","requisito","sancion","cita_textual","link_fuente_oficial","fuente_verificada_url","area_competente","gerencia_competente","impacto_economico","probabilidad_incumplimiento","tipo_norma","norma_nombre","fecha_publicacion","organismo_emisor","resumen_experto","campo_juridico","observaciones","proceso_actividad_relacionada","sponsor","responsable_proceso"}]}',
+    '{"docs":[{"doc_id":"uuid","aplica":true|false,"motivo":"..."}],"items":[{"articulo","requisito","sancion","cita_textual","link_fuente_oficial","fuente_verificada_url","area_competente","gerencia_competente","impacto_economico","probabilidad_incumplimiento","tipo_norma","norma_nombre","fecha_publicacion","organismo_emisor","resumen_experto","campo_juridico","observaciones","proceso_actividad_relacionada","sponsor","responsable_proceso","obligacion_grupo_id","obligacion_grupo_etiqueta"}]}',
     "items: solo requisitos accionables derivados de los docs que aplican; articulo puede ser Art. X o —.",
+    "obligacion_grupo_id: slug corto en inglés o español sin espacios (ej. obligaciones-tributarias-cumplimiento); mismo id para artículos que materialicen UNA misma obligación sustantiva (ej. plazo + forma de pago del mismo tributo).",
+    "obligacion_grupo_etiqueta: frase en español para humanos (ej. Cumplimiento de obligaciones tributarias — plazos y medios de pago).",
     "Devuelve minimo: docs (uno por cada DOC incluido) e items (puede ser []).",
     "Si un DOC no aplica: aplica=false y NO generes items de ese DOC.",
     "",

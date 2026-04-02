@@ -3,8 +3,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { IaMarkdownStream } from "@/components/IaMarkdownStream";
+import { labelClasificacionDoc } from "@/lib/normativa-titles";
 
-type DocMini = { id: string; titulo: string | null; fuente_url: string | null; storage_path: string | null; created_at: string };
+type DocMini = {
+  id: string;
+  titulo: string | null;
+  fuente_url: string | null;
+  storage_path: string | null;
+  created_at: string;
+  clasificacion_documento?: string | null;
+};
 
 export function PdfQnA({ negocioId }: { negocioId: string | null }) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
@@ -94,11 +102,15 @@ export function PdfQnA({ negocioId }: { negocioId: string | null }) {
             disabled={scope !== "doc"}
           >
             <option value="">— Selecciona —</option>
-            {docs.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.titulo ?? d.id}
-              </option>
-            ))}
+            {docs.map((d) => {
+              const cls = d.clasificacion_documento ? labelClasificacionDoc(d.clasificacion_documento) : "";
+              const label = [d.titulo ?? d.id, cls ? `(${cls})` : ""].filter(Boolean).join(" ");
+              return (
+                <option key={d.id} value={d.id}>
+                  {label}
+                </option>
+              );
+            })}
           </select>
           <div className="mt-1 text-xs text-charcoal/60">{docs.length} PDFs en memoria</div>
         </label>

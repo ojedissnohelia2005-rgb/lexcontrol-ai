@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { extractPdfText } from "@/lib/pdf";
 import { sha256Hex } from "@/lib/hash";
 import { compareNormativaWithGemini, extractNormativaMetaGemini } from "@/lib/gemini-normativa";
+import { normalizeNormativaTitle } from "@/lib/normativa-titles";
 
 /** Vercel / Node: PDF + Storage + IA puede superar el default de 10s en plan Pro. */
 export const runtime = "nodejs";
@@ -80,33 +81,45 @@ export async function POST(req: Request) {
         texto_extraido: texto,
         sha256,
         fecha_normativa: meta.fecha_normativa_iso,
+        clasificacion_documento: meta.clasificacion_documento,
         created_by: userData.user.id
       })
       .select("id,created_at,titulo")
       .single();
     if (nErr) return NextResponse.json({ error: nErr.message }, { status: 400 });
 
-    // Si hay otras normas en este negocio con el mismo título, conserva la más reciente y elimina las anteriores.
+    /** Misma norma (título normalizado IA): conserva la carga más reciente; alerta en Notificaciones para revisión. */
     try {
-      if (tituloDetectado) {
-        const { data: dupes } = await supabase
-          .from("normativa_docs")
-          .select("id,created_at")
-          .eq("negocio_id", negocio_id)
-          .neq("id", inserted.id)
-          .ilike("titulo", tituloDetectado);
-        const all = [...(dupes ?? []), { id: inserted.id, created_at: inserted.created_at }] as { id: string; created_at: string }[];
-        if (all.length > 1) {
-          all.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-          const keep = all[all.length - 1]!.id;
-          const toDelete = all.filter((d) => d.id !== keep).map((d) => d.id);
-          if (toDelete.length > 0) {
-            await supabase.from("normativa_docs").delete().in("id", toDelete);
-          }
-        }
+      const { data: allNorm } = await supabase.from("normativa_docs").select("id,titulo,created_at").eq("negocio_id", negocio_id);
+
+      const groups = new Map<string, { id: string; created_at: string; titulo: string | null }[]>();
+      for (const row of allNorm ?? []) {
+        const k = normalizeNormativaTitle(row.titulo);
+        if (k.length < 8) continue;
+        if (!groups.has(k)) groups.set(k, []);
+        groups.get(k)!.push({ id: row.id, created_at: row.created_at, titulo: row.titulo });
+      }
+
+      for (const [, rows] of groups) {
+        if (rows.length < 2) continue;
+        rows.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+        const keep = rows[rows.length - 1]!.id;
+        const remove = rows.filter((r) => r.id !== keep).map((r) => r.id);
+        if (remove.length === 0) continue;
+        await supabase.from("normativa_docs").delete().in("id", remove);
+        const tituloRef = rows[rows.length - 1]!.titulo ?? tituloDetectado;
+        await supabase.from("alertas_actualizacion_normativa").insert({
+          normativa_doc_id: keep,
+          tiene_posible_actualizacion: true,
+          nivel_confianza: 1,
+          comentario:
+            "Sistema: normativa duplicada por título (IA). Se conservó la versión más reciente y se eliminaron cargas anteriores. " +
+            `IDs eliminados: ${remove.join(", ")}. Super admin: revise propuestas/matriz y deshaga manualmente si no corresponde. Norma: ${tituloRef ?? "—"}`,
+          revisado: false
+        });
       }
     } catch {
-      // si falla la limpieza de duplicados por título, no rompemos el flujo principal
+      // si falla dedupe/alerta, no rompemos el flujo
     }
 
     const { data: siblings } = await supabase

@@ -36,6 +36,8 @@ export type GeminiExtractionItem = {
   gerencia_competente: string | null;
   impacto_economico: number | null;
   probabilidad_incumplimiento: number | null;
+  obligacion_grupo_id?: string | null;
+  obligacion_grupo_etiqueta?: string | null;
 };
 
 export async function POST(req: Request) {
@@ -47,7 +49,7 @@ export async function POST(req: Request) {
       "Eres un analista legal de cumplimiento en Ecuador (2026).",
       "A partir del texto de una normativa ecuatoriana, extrae una lista de requisitos accionables para una Matriz de Cumplimiento.",
       "Devuelve SOLO JSON válido con la forma:",
-      "{ items: [ { tipo_norma, norma_nombre, fecha_publicacion, organismo_emisor, resumen_experto, campo_juridico, observaciones, proceso_actividad_relacionada, sponsor, responsable_proceso, articulo, requisito, sancion, cita_textual, link_fuente_oficial, fuente_verificada_url, area_competente, gerencia_competente, impacto_economico, probabilidad_incumplimiento } ] }",
+      "{ items: [ { tipo_norma, norma_nombre, fecha_publicacion, organismo_emisor, resumen_experto, campo_juridico, observaciones, proceso_actividad_relacionada, sponsor, responsable_proceso, articulo, requisito, sancion, cita_textual, link_fuente_oficial, fuente_verificada_url, area_competente, gerencia_competente, impacto_economico, probabilidad_incumplimiento, obligacion_grupo_id, obligacion_grupo_etiqueta } ] }",
       "",
       "Reglas:",
       "- Si identificas el nombre oficial de la norma, colócalo en 'norma_nombre'.",
@@ -61,6 +63,8 @@ export async function POST(req: Request) {
       "- 'resumen_experto' es un resumen en 1-2 líneas para lectura ejecutiva.",
       "- 'campo_juridico' por ejemplo: tributario, laboral, ambiental, hidrocarburos, societario, datos personales, etc.",
       "- 'impacto_economico' (1-10) y 'probabilidad_incumplimiento' (1-5) como estimación.",
+      "- obligacion_grupo_id: slug único compartido por artículos que materializan la MISMA obligación sustantiva (ej. plazo + forma de pago tributario); null si no aplica.",
+      "- obligacion_grupo_etiqueta: etiqueta legible en español para ese grupo (o null).",
       "",
       body.negocio?.nombre
         ? [

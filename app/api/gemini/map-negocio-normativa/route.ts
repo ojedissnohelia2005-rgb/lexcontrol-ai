@@ -109,7 +109,9 @@ export async function POST(req: Request) {
           origen: "mapa_normativa",
           doc_ids: body.normativa_doc_ids,
           aplicacion,
-          generado_at: new Date().toISOString()
+          generado_at: new Date().toISOString(),
+          obligacion_grupo_id: (it as { obligacion_grupo_id?: string | null }).obligacion_grupo_id ?? null,
+          obligacion_grupo_etiqueta: (it as { obligacion_grupo_etiqueta?: string | null }).obligacion_grupo_etiqueta ?? null
         }
       };
     };

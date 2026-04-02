@@ -10,10 +10,18 @@ import { estimateUsdFromSanction, classifyPrioridad, computePriorityScore } from
 import { PdfQnA } from "@/components/ai/PdfQnA";
 import { LEGAL_DRIVE_FOLDER_URL } from "@/lib/legal-constants";
 import type { ComparacionNormativa } from "@/types/domain";
+import { labelClasificacionDoc } from "@/lib/normativa-titles";
 
 type NegocioMini = { id: string; nombre: string; sector: string | null; detalles_negocio: string | null };
 
-type NormativaRow = { id: string; titulo: string | null; created_at: string; sha256: string | null; es_base_sistema?: boolean };
+type NormativaRow = {
+  id: string;
+  titulo: string | null;
+  created_at: string;
+  sha256: string | null;
+  es_base_sistema?: boolean;
+  clasificacion_documento?: string | null;
+};
 
 function formatUiError(e: unknown) {
   const raw = e instanceof Error ? e.message : String(e);
@@ -52,7 +60,7 @@ export default function AiNotebookPage() {
     if (!supabase || !negocioId) return;
     const { data, error } = await supabase
       .from("normativa_docs")
-      .select("id,titulo,created_at,sha256,es_base_sistema")
+      .select("id,titulo,created_at,sha256,es_base_sistema,clasificacion_documento")
       .eq("negocio_id", negocioId)
       .order("created_at", { ascending: false });
     if (error) {
@@ -252,7 +260,12 @@ export default function AiNotebookPage() {
           prioridad,
           estado: "pendiente",
           normativa_doc_id: normativaDocId ?? null,
-          extra: { origen: "pdf_upload", comparacion: data.comparacion ?? null }
+          extra: {
+            origen: "pdf_upload",
+            comparacion: data.comparacion ?? null,
+            obligacion_grupo_id: it.obligacion_grupo_id ?? null,
+            obligacion_grupo_etiqueta: it.obligacion_grupo_etiqueta ?? null
+          }
         };
       });
 
@@ -407,6 +420,11 @@ export default function AiNotebookPage() {
                         <span className="text-xs leading-snug">
                           <span className="font-medium text-charcoal">
                             {d.titulo ?? "Sin título"}
+                            {d.clasificacion_documento ? (
+                              <span className="ml-1 rounded-full bg-charcoal/5 px-2 py-0.5 text-[10px] font-semibold text-charcoal/80 ring-1 ring-borderSoft">
+                                {labelClasificacionDoc(d.clasificacion_documento)}
+                              </span>
+                            ) : null}
                             {base ? <span className="ml-1 rounded-full bg-sidebarRose/10 px-2 py-0.5 text-[10px] font-semibold text-sidebarRose">Base sistema</span> : null}
                           </span>
                           <span className="block text-[10px] text-charcoal/50">{new Date(d.created_at).toLocaleString()}</span>

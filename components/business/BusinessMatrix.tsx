@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { estimateUsdFromSanction, classifyPrioridad, computePriorityScore } from "@/lib/finance";
 import { isSuperAdminEmail } from "@/lib/roles";
+import { labelClasificacionDoc } from "@/lib/normativa-titles";
 import { IaMarkdownStream } from "@/components/IaMarkdownStream";
 
 type Row = {
@@ -37,7 +38,14 @@ type Row = {
 };
 
 type AssignableProfile = { id: string; email: string | null; nombre: string | null; rol: string };
-type NormativaMini = { id: string; titulo: string | null; fuente_url: string | null; storage_path: string | null; created_at: string };
+type NormativaMini = {
+  id: string;
+  titulo: string | null;
+  fuente_url: string | null;
+  storage_path: string | null;
+  created_at: string;
+  clasificacion_documento?: string | null;
+};
 
 type Propuesta = {
   id: string;
@@ -65,6 +73,19 @@ type Propuesta = {
 
 function esVigilancia(extra: Record<string, unknown> | null | undefined) {
   return extra && typeof extra === "object" && extra.origen === "vigilancia_horaria";
+}
+
+function grupoPropuestaKey(p: Propuesta): string {
+  const ex = p.extra && typeof p.extra === "object" ? (p.extra as Record<string, unknown>) : {};
+  const gid = typeof ex.obligacion_grupo_id === "string" ? ex.obligacion_grupo_id.trim() : "";
+  if (gid) return `g:${gid}`;
+  return `u:${p.id}`;
+}
+
+function grupoEtiquetaObligacion(list: Propuesta[]): string {
+  const ex = list[0]?.extra && typeof list[0]!.extra === "object" ? (list[0]!.extra as Record<string, unknown>) : {};
+  const t = typeof ex.obligacion_grupo_etiqueta === "string" ? ex.obligacion_grupo_etiqueta.trim() : "";
+  return t || "Misma obligación — varios artículos";
 }
 
 function badgeEstado(estado: string) {
@@ -111,7 +132,7 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
   const [fillingBlanks, setFillingBlanks] = useState(false);
   const [deletingRowId, setDeletingRowId] = useState<string | null>(null);
 
-  const canApprove = isSuperAdminEmail(email);
+  const canApprove = currentRole === "admin" || currentRole === "super_admin" || isSuperAdminEmail(email);
   const canEditMatrix = Boolean(currentUserId && supabase);
   const canAdminMatrix = currentRole === "admin" || currentRole === "super_admin";
   const canDeleteFiles = canAdminMatrix;
@@ -215,7 +236,7 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
     if (!supabase || !negocioId) return;
     supabase
       .from("normativa_docs")
-      .select("id,titulo,fuente_url,storage_path,created_at")
+      .select("id,titulo,fuente_url,storage_path,created_at,clasificacion_documento")
       .eq("negocio_id", negocioId)
       .order("created_at", { ascending: false })
       .then(({ data }) => {
@@ -387,6 +408,42 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
       setError(e instanceof Error ? e.message : "Error aprobando");
     }
   }
+
+  async function approvePropuestaGroup(ids: string[]) {
+    setError(null);
+    try {
+      if (!supabase) throw new Error("Falta configurar Supabase en .env.local");
+      for (const id of ids) {
+        const res = await fetch("/api/propuestas/approve", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ propuesta_id: id })
+        });
+        const data = (await res.json()) as { ok?: boolean; error?: string };
+        if (!res.ok || data.error) throw new Error(data.error ?? "No se pudo aprobar una fila del grupo");
+      }
+      await loadAll();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Error aprobando grupo");
+    }
+  }
+
+  function patchGrupoPropuesta(ids: string[], patch: Partial<Propuesta>) {
+    void Promise.all(ids.map((id) => patchPropuesta(id, patch)));
+  }
+
+  const gruposPropuestas = useMemo(() => {
+    const m = new Map<string, Propuesta[]>();
+    for (const p of propuestas) {
+      const k = grupoPropuestaKey(p);
+      if (!m.has(k)) m.set(k, []);
+      m.get(k)!.push(p);
+    }
+    return Array.from(m.entries()).map(([key, list]) => ({
+      key,
+      list: list.sort((a, b) => (a.articulo || "").localeCompare(b.articulo || "", "es", { numeric: true }))
+    }));
+  }, [propuestas]);
 
   return (
     <div className="space-y-6">
@@ -658,7 +715,14 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
                       {r.normativa_doc_id && normas[r.normativa_doc_id] ? (
                         <div className="rounded-xl bg-white px-3 py-2 text-xs ring-1 ring-borderSoft">
                           <div className="font-medium text-charcoal/80">Norma origen</div>
-                          <div className="mt-1 text-[11px] text-charcoal/70">{normas[r.normativa_doc_id]?.titulo ?? "—"}</div>
+                          <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-charcoal/70">
+                            <span>{normas[r.normativa_doc_id]?.titulo ?? "—"}</span>
+                            {normas[r.normativa_doc_id]?.clasificacion_documento ? (
+                              <span className="rounded-full bg-charcoal/5 px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-borderSoft">
+                                {labelClasificacionDoc(normas[r.normativa_doc_id]?.clasificacion_documento)}
+                              </span>
+                            ) : null}
+                          </div>
                           <a
                             className="mt-2 inline-block text-[11px] text-sidebarRose underline"
                             href={normas[r.normativa_doc_id]?.fuente_url ?? r.fuente_verificada_url ?? "#"}
@@ -803,190 +867,235 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
         ) : null}
 
         <div className="mt-4 space-y-3">
-          {propuestas.map((p) => {
-            const multa = p.multa_estimada_usd ?? estimateUsdFromSanction(p.sancion) ?? null;
-            const score = computePriorityScore(p.impacto_economico, p.probabilidad_incumplimiento);
-            const prioridad = p.prioridad ?? classifyPrioridad({ sancion: p.sancion, multa_estimada_usd: multa, priorityScore: score });
-            const vig = esVigilancia(p.extra);
+          {gruposPropuestas.map(({ key, list }) => {
+            const isGroup = list.length > 1;
+            const ids = list.map((x) => x.id);
+            const primary = list[0]!;
+            const aplicaKey = (v: boolean | null | undefined) =>
+              v === true ? "si" : v === false ? "no" : "pend";
+            const uniformAplica =
+              list.length <= 1 ||
+              list.every((q) => aplicaKey(q.aplica_usuario) === aplicaKey(primary.aplica_usuario));
+            const aplicaSelectVal = !uniformAplica
+              ? ""
+              : primary.aplica_usuario === null || primary.aplica_usuario === undefined
+                ? ""
+                : primary.aplica_usuario
+                  ? "si"
+                  : "no";
+            const uniformSup =
+              list.length <= 1 || list.every((q) => (q.supervisor_legal_id ?? "") === (primary.supervisor_legal_id ?? ""));
+            const supervisorVal = uniformSup ? primary.supervisor_legal_id ?? "" : "";
+
             return (
               <div
-                key={p.id}
-                className="rounded-2xl bg-cream/90 p-4 ring-1 ring-borderSoft shadow-sm transition hover:bg-cream hover:shadow-md"
+                key={key}
+                className={`rounded-2xl bg-cream/90 p-4 ring-1 ring-borderSoft shadow-sm transition hover:bg-cream hover:shadow-md ${isGroup ? "ring-2 ring-sidebarRose/25" : ""}`}
               >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="text-sm font-semibold">{p.articulo}</div>
-                      {vig ? (
-                        <span className="rounded-full bg-sidebarRose/20 px-2 py-0.5 text-[11px] font-medium text-sidebarRose ring-1 ring-sidebarRose/30">
-                          Vigilancia horaria
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="mt-1 text-sm">{p.requisito}</div>
-                    {vig && p.extra && typeof p.extra.alerta_contexto === "string" ? (
-                      <div className="mt-1 text-xs text-charcoal/50">Contexto alerta: {p.extra.alerta_contexto}</div>
-                    ) : null}
-                    <div className="mt-2 text-xs text-charcoal/60">{p.cita_textual ?? "—"}</div>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <span className={`inline-flex rounded-full px-2 py-1 text-xs ring-1 ${badgeEstado(p.estado)}`}>{p.estado}</span>
-                      <span className={`inline-flex rounded-full px-2 py-1 text-xs ring-1 ${badgePrioridad(prioridad)}`}>{prioridad}</span>
-                      <span className="inline-flex rounded-full bg-white px-2 py-1 text-xs ring-1 ring-borderSoft">
-                        Multa: {multa ? `$${Number(multa).toLocaleString()}` : "—"}
-                      </span>
-                    </div>
-                    <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                      {p.fuente_verificada_url ? (
-                        <a className="text-sidebarRose underline" href={p.fuente_verificada_url} target="_blank" rel="noreferrer">
-                          Fuente verificada
-                        </a>
-                      ) : null}
-                      {p.link_fuente_oficial ? (
-                        <a className="text-sidebarRose underline" href={p.link_fuente_oficial} target="_blank" rel="noreferrer">
-                          Link oficial
-                        </a>
-                      ) : null}
-                      {p.normativa_doc_id ? (
-                        <span className="rounded-full bg-white px-2 py-0.5 ring-1 ring-borderSoft">Doc memoria: {p.normativa_doc_id.slice(0, 8)}…</span>
-                      ) : null}
-                    </div>
-                    {(p.gerencia_competente || p.area_competente) && (
-                      <div className="mt-2 text-[11px] text-charcoal/55">
-                        Sugerencia IA — Gerencia: {p.gerencia_competente ?? "—"} · Jefatura/área: {p.area_competente ?? "—"}
+                {isGroup ? (
+                  <div className="mb-3 rounded-xl bg-sidebarRose/10 px-3 py-2 text-xs font-semibold text-charcoal ring-1 ring-sidebarRose/20">
+                    Grupo (misma obligación): {grupoEtiquetaObligacion(list)} · {list.length} artículos
+                  </div>
+                ) : null}
+                {list.map((p) => {
+                  const multa = p.multa_estimada_usd ?? estimateUsdFromSanction(p.sancion) ?? null;
+                  const score = computePriorityScore(p.impacto_economico, p.probabilidad_incumplimiento);
+                  const prioridad = p.prioridad ?? classifyPrioridad({ sancion: p.sancion, multa_estimada_usd: multa, priorityScore: score });
+                  const vig = esVigilancia(p.extra);
+                  return (
+                    <div key={p.id} className={isGroup ? "border-t border-borderSoft pt-4 mt-4 first:mt-0 first:border-0 first:pt-0" : ""}>
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="text-sm font-semibold">{p.articulo}</div>
+                            {vig ? (
+                              <span className="rounded-full bg-sidebarRose/20 px-2 py-0.5 text-[11px] font-medium text-sidebarRose ring-1 ring-sidebarRose/30">
+                                Vigilancia horaria
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="mt-1 text-sm">{p.requisito}</div>
+                          {vig && p.extra && typeof p.extra.alerta_contexto === "string" ? (
+                            <div className="mt-1 text-xs text-charcoal/50">Contexto alerta: {p.extra.alerta_contexto}</div>
+                          ) : null}
+                          <div className="mt-2 text-xs text-charcoal/60">{p.cita_textual ?? "—"}</div>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <span className={`inline-flex rounded-full px-2 py-1 text-xs ring-1 ${badgeEstado(p.estado)}`}>{p.estado}</span>
+                            <span className={`inline-flex rounded-full px-2 py-1 text-xs ring-1 ${badgePrioridad(prioridad)}`}>{prioridad}</span>
+                            <span className="inline-flex rounded-full bg-white px-2 py-1 text-xs ring-1 ring-borderSoft">
+                              Multa: {multa ? `$${Number(multa).toLocaleString()}` : "—"}
+                            </span>
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                            {p.fuente_verificada_url ? (
+                              <a className="text-sidebarRose underline" href={p.fuente_verificada_url} target="_blank" rel="noreferrer">
+                                Fuente verificada
+                              </a>
+                            ) : null}
+                            {p.link_fuente_oficial ? (
+                              <a className="text-sidebarRose underline" href={p.link_fuente_oficial} target="_blank" rel="noreferrer">
+                                Link oficial
+                              </a>
+                            ) : null}
+                            {p.normativa_doc_id ? (
+                              <span className="inline-flex flex-wrap items-center gap-1 rounded-full bg-white px-2 py-0.5 ring-1 ring-borderSoft">
+                                {normas[p.normativa_doc_id]?.titulo ? (
+                                  <>
+                                    <span className="font-medium text-charcoal/80">{normas[p.normativa_doc_id]!.titulo}</span>
+                                    {normas[p.normativa_doc_id]?.clasificacion_documento ? (
+                                      <span className="rounded-full bg-charcoal/5 px-1.5 py-0.5 text-[10px] ring-1 ring-borderSoft">
+                                        {labelClasificacionDoc(normas[p.normativa_doc_id]?.clasificacion_documento)}
+                                      </span>
+                                    ) : null}
+                                  </>
+                                ) : null}
+                                <span className="text-charcoal/55">Doc: {p.normativa_doc_id.slice(0, 8)}…</span>
+                              </span>
+                            ) : null}
+                          </div>
+                          {(p.gerencia_competente || p.area_competente) && (
+                            <div className="mt-2 text-[11px] text-charcoal/55">
+                              Sugerencia IA — Gerencia: {p.gerencia_competente ?? "—"} · Jefatura/área: {p.area_competente ?? "—"}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex flex-col items-stretch gap-2 sm:items-end">
+                          {vig ? (
+                            <div className="flex flex-wrap justify-end gap-2">
+                              <button
+                                type="button"
+                                className="rounded-xl bg-white px-3 py-2 text-xs ring-1 ring-borderSoft hover:bg-cream/70 disabled:opacity-50"
+                                disabled={iaBusy === p.id}
+                                onClick={() => void resumenPropuesta(p.id)}
+                              >
+                                {iaBusy === p.id ? "..." : "Resumen IA"}
+                              </button>
+                              <button
+                                type="button"
+                                className="rounded-xl bg-white px-3 py-2 text-xs ring-1 ring-borderSoft hover:bg-cream/70"
+                                onClick={() => {
+                                  setQaPropuestaId(qaPropuestaId === p.id ? null : p.id);
+                                  setIaPanel(null);
+                                }}
+                              >
+                                {qaPropuestaId === p.id ? "Ocultar pregunta" : "Preguntar a IA"}
+                              </button>
+                            </div>
+                          ) : null}
+                          {qaPropuestaId === p.id ? (
+                            <div className="w-full max-w-md space-y-2 rounded-xl bg-white p-3 ring-1 ring-borderSoft">
+                              <input
+                                className="w-full rounded-lg bg-cream px-2 py-2 text-xs ring-1 ring-borderSoft"
+                                placeholder="¿Deberíamos agregar esto a la matriz y por qué?"
+                                value={qaPregunta}
+                                onChange={(e) => setQaPregunta(e.target.value)}
+                              />
+                              <button
+                                type="button"
+                                className="rounded-lg bg-charcoal px-3 py-1.5 text-xs font-medium text-cream shadow-sm hover:bg-charcoal/90 disabled:opacity-50"
+                                disabled={iaBusy === p.id}
+                                onClick={() => void preguntarPropuesta(p.id)}
+                              >
+                                Enviar pregunta
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
-                    )}
-                    <div
-                      key={`triage-${p.id}-${p.updated_at ?? ""}`}
-                      className="mt-4 grid gap-3 rounded-xl bg-white/70 p-3 ring-1 ring-borderSoft sm:grid-cols-2"
+                    </div>
+                  );
+                })}
+                <div
+                  key={`triage-${key}-${primary.updated_at ?? ""}`}
+                  className="mt-4 grid gap-3 rounded-xl bg-white/70 p-3 ring-1 ring-borderSoft sm:grid-cols-2"
+                >
+                  <label className="block text-xs">
+                    <span className="font-medium text-charcoal">¿Aplica al negocio?</span>
+                    {isGroup && !uniformAplica ? (
+                      <div className="mt-1 text-[10px] text-amber-800">Los artículos del grupo difieren; unifica criterio.</div>
+                    ) : null}
+                    <select
+                      className="mt-1 w-full rounded-lg bg-cream px-2 py-1.5 ring-1 ring-borderSoft"
+                      value={aplicaSelectVal}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        patchGrupoPropuesta(ids, { aplica_usuario: v === "" ? null : v === "si" });
+                      }}
                     >
-                      <label className="block text-xs">
-                        <span className="font-medium text-charcoal">¿Aplica al negocio?</span>
-                        <select
-                          className="mt-1 w-full rounded-lg bg-cream px-2 py-1.5 ring-1 ring-borderSoft"
-                          value={p.aplica_usuario === null || p.aplica_usuario === undefined ? "" : p.aplica_usuario ? "si" : "no"}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            void patchPropuesta(p.id, {
-                              aplica_usuario: v === "" ? null : v === "si"
-                            });
-                          }}
-                        >
-                          <option value="">— Pendiente —</option>
-                          <option value="si">Sí aplica</option>
-                          <option value="no">No aplica</option>
-                        </select>
-                      </label>
-                      <label className="block text-xs">
-                        <span className="font-medium text-charcoal">Supervisor legal (revisor)</span>
-                        <select
-                          className="mt-1 w-full rounded-lg bg-cream px-2 py-1.5 ring-1 ring-borderSoft"
-                          value={p.supervisor_legal_id ?? ""}
-                          onChange={(e) => void patchPropuesta(p.id, { supervisor_legal_id: e.target.value || null })}
-                        >
-                          <option value="">— Sin asignar —</option>
-                          {assignable.map((u) => (
-                            <option key={u.id} value={u.id}>
-                              {(u.nombre || u.email || u.id).slice(0, 48)}
-                              {u.email ? ` · ${u.email}` : ""}
-                            </option>
-                          ))}
-                        </select>
-                        {currentUserId ? (
-                          <button
-                            type="button"
-                            className="mt-1 text-[11px] text-sidebarRose underline"
-                            onClick={() => void patchPropuesta(p.id, { supervisor_legal_id: currentUserId })}
-                          >
-                            Asignarme a mí
-                          </button>
-                        ) : null}
-                      </label>
-                      <label className="block text-xs sm:col-span-1">
-                        <span className="font-medium text-charcoal">Gerencia asignada</span>
-                        <input
-                          className="mt-1 w-full rounded-lg bg-cream px-2 py-1.5 ring-1 ring-borderSoft"
-                          placeholder="Ej. Gerencia de Operaciones"
-                          defaultValue={p.asignacion_gerencia ?? ""}
-                          onBlur={(e) => {
-                            const v = e.target.value.trim();
-                            if (v !== (p.asignacion_gerencia ?? "")) void patchPropuesta(p.id, { asignacion_gerencia: v || null });
-                          }}
-                        />
-                      </label>
-                      <label className="block text-xs sm:col-span-1">
-                        <span className="font-medium text-charcoal">Jefatura (dentro de gerencia)</span>
-                        <input
-                          className="mt-1 w-full rounded-lg bg-cream px-2 py-1.5 ring-1 ring-borderSoft"
-                          placeholder="Ej. Jefatura de HSE"
-                          defaultValue={p.asignacion_jefatura ?? ""}
-                          onBlur={(e) => {
-                            const v = e.target.value.trim();
-                            if (v !== (p.asignacion_jefatura ?? "")) void patchPropuesta(p.id, { asignacion_jefatura: v || null });
-                          }}
-                        />
-                      </label>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col items-stretch gap-2 sm:items-end">
-                    {vig ? (
-                      <div className="flex flex-wrap justify-end gap-2">
-                        <button
-                          type="button"
-                          className="rounded-xl bg-white px-3 py-2 text-xs ring-1 ring-borderSoft hover:bg-cream/70 disabled:opacity-50"
-                          disabled={iaBusy === p.id}
-                          onClick={() => void resumenPropuesta(p.id)}
-                        >
-                          {iaBusy === p.id ? "..." : "Resumen IA"}
-                        </button>
-                        <button
-                          type="button"
-                          className="rounded-xl bg-white px-3 py-2 text-xs ring-1 ring-borderSoft hover:bg-cream/70"
-                          onClick={() => {
-                            setQaPropuestaId(qaPropuestaId === p.id ? null : p.id);
-                            setIaPanel(null);
-                          }}
-                        >
-                          {qaPropuestaId === p.id ? "Ocultar pregunta" : "Preguntar a IA"}
-                        </button>
-                      </div>
+                      <option value="">— Pendiente —</option>
+                      <option value="si">Sí aplica</option>
+                      <option value="no">No aplica</option>
+                    </select>
+                  </label>
+                  <label className="block text-xs">
+                    <span className="font-medium text-charcoal">Supervisor legal (revisor)</span>
+                    {isGroup && !uniformSup ? (
+                      <div className="mt-1 text-[10px] text-amber-800">Distintos supervisores en el grupo; elige uno para todos.</div>
                     ) : null}
-                    {qaPropuestaId === p.id ? (
-                      <div className="w-full max-w-md space-y-2 rounded-xl bg-white p-3 ring-1 ring-borderSoft">
-                        <input
-                          className="w-full rounded-lg bg-cream px-2 py-2 text-xs ring-1 ring-borderSoft"
-                          placeholder="¿Deberíamos agregar esto a la matriz y por qué?"
-                          value={qaPregunta}
-                          onChange={(e) => setQaPregunta(e.target.value)}
-                        />
-                        <button
-                          type="button"
-                          className="rounded-lg bg-charcoal px-3 py-1.5 text-xs font-medium text-cream shadow-sm hover:bg-charcoal/90 disabled:opacity-50"
-                          disabled={iaBusy === p.id}
-                          onClick={() => void preguntarPropuesta(p.id)}
-                        >
-                          Enviar pregunta
-                        </button>
-                      </div>
-                    ) : null}
-                    {canApprove ? (
+                    <select
+                      className="mt-1 w-full rounded-lg bg-cream px-2 py-1.5 ring-1 ring-borderSoft"
+                      value={supervisorVal}
+                      onChange={(e) => patchGrupoPropuesta(ids, { supervisor_legal_id: e.target.value || null })}
+                    >
+                      <option value="">— Sin asignar —</option>
+                      {assignable.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {(u.nombre || u.email || u.id).slice(0, 48)}
+                          {u.email ? ` · ${u.email}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                    {currentUserId ? (
                       <button
                         type="button"
-                        className="rounded-xl bg-charcoal px-3 py-2 text-sm font-medium text-cream shadow-sm hover:bg-charcoal/90"
-                        onClick={() => void approvePropuesta(p.id)}
+                        className="mt-1 text-[11px] text-sidebarRose underline"
+                        onClick={() => patchGrupoPropuesta(ids, { supervisor_legal_id: currentUserId })}
                       >
-                        Aprobar → matriz
+                        Asignarme a mí (grupo)
                       </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="rounded-xl border border-charcoal/15 bg-cream px-3 py-2 text-sm font-medium text-charcoal/50"
-                        disabled
-                      >
-                        Aprobar (Super Admin)
-                      </button>
-                    )}
-                  </div>
+                    ) : null}
+                  </label>
+                  <label className="block text-xs sm:col-span-1">
+                    <span className="font-medium text-charcoal">Gerencia asignada</span>
+                    <input
+                      key={`${key}-ger-${primary.asignacion_gerencia ?? ""}`}
+                      className="mt-1 w-full rounded-lg bg-cream px-2 py-1.5 ring-1 ring-borderSoft"
+                      placeholder="Ej. Gerencia de Operaciones"
+                      defaultValue={primary.asignacion_gerencia ?? ""}
+                      onBlur={(e) => {
+                        const v = e.target.value.trim();
+                        patchGrupoPropuesta(ids, { asignacion_gerencia: v || null });
+                      }}
+                    />
+                  </label>
+                  <label className="block text-xs sm:col-span-1">
+                    <span className="font-medium text-charcoal">Jefatura (dentro de gerencia)</span>
+                    <input
+                      key={`${key}-jef-${primary.asignacion_jefatura ?? ""}`}
+                      className="mt-1 w-full rounded-lg bg-cream px-2 py-1.5 ring-1 ring-borderSoft"
+                      placeholder="Ej. Jefatura de HSE"
+                      defaultValue={primary.asignacion_jefatura ?? ""}
+                      onBlur={(e) => {
+                        const v = e.target.value.trim();
+                        patchGrupoPropuesta(ids, { asignacion_jefatura: v || null });
+                      }}
+                    />
+                  </label>
+                </div>
+                <div className="mt-4 flex justify-end">
+                  {canApprove ? (
+                    <button
+                      type="button"
+                      className="rounded-xl bg-charcoal px-4 py-2 text-sm font-medium text-cream shadow-sm hover:bg-charcoal/90"
+                      onClick={() => void approvePropuestaGroup(ids)}
+                    >
+                      Aprobar {isGroup ? `${list.length} artículos` : ""} → matriz
+                    </button>
+                  ) : (
+                    <button type="button" className="rounded-xl border border-charcoal/15 bg-cream px-3 py-2 text-sm font-medium text-charcoal/50" disabled>
+                      Aprobar (admin / super admin)
+                    </button>
+                  )}
                 </div>
               </div>
             );
