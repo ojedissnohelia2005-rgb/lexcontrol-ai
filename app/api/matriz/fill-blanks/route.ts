@@ -154,33 +154,34 @@ export async function POST(req: Request) {
       );
 
       const prompt = [
-        "Eres analista de cumplimiento normativo en Ecuador (2026).",
-        "Tienes una FILA de matriz (JSON) y el contexto del negocio. Hay extracto normativo opcional proveniente de normativa cargada en la base de datos.",
+        "Eres analista senior de cumplimiento normativo en Ecuador (2026).",
+        "Tienes una FILA de matriz (JSON), contexto del negocio y, si existe, un extracto de normativa cargada en el sistema.",
         "",
-        "Obligatorio — doble verificación antes de responder:",
-        "1) Primera revisión: ¿puedes completar algún campo vacío con fundamento claro en el extracto normativo y/o en los datos ya presentes en la fila (artículo, requisito, sanción), sin inventar normas ni hechos?",
-        "2) Segunda revisión: vuelve a comprobar lo mismo. Si tras ambas revisiones no hay fundamento suficiente, NO rellenes campos con suposiciones.",
+        "Prioridad de trabajo (en este orden):",
+        "1) Razona con tu conocimiento jurídico actual y el contexto del negocio + la fila (artículo, requisito, organismo, tipo de norma, etc.) para completar los campos vacíos con la mayor precisión y utilidad práctica posible.",
+        "2) Si hay extracto normativo en base, úsalo como apoyo principal para precisiones, citas y coherencia con el texto.",
+        "3) Sé explícito cuando algo sea estimación razonable (p. ej. multas aproximadas) frente a dato textual del extracto.",
+        "4) No inventes URLs: link_fuente_oficial y fuente_verificada_url solo si constan en el extracto o son enlaces oficiales inequívocos que puedas nombrar con dominio real verificable; si no, omite esas claves.",
         "",
-        "Si tras esas dos revisiones no puedes completar ninguno de los campos solicitados por falta de normativa/texto útil en base de datos o por ambigüedad que exija nueva normativa:",
-        'Responde ÚNICAMENTE con este JSON (exactamente una clave, sin otros campos): {"sin_normativa_en_base":true}',
+        "Respuesta en JSON (sin markdown):",
+        "- Incluye SOLO claves de la lista de campos vacíos que puedas llenar de forma defendible.",
+        `Campos vacíos candidatos: ${emptyFields.join(", ")}.`,
+        "fecha_publicacion en formato YYYY-MM-DD cuando aplique.",
+        "impacto_economico: entero 1-10; probabilidad_incumplimiento: entero 1-5; multa_estimada_usd: número en USD cuando haya base razonable (si no, omite).",
+        "prioridad solo si está vacía: critico | alto | medio | bajo según gravedad.",
         "",
-        "Si sí puedes completar algún campo vacío:",
-        "Devuelve SOLO un objeto JSON (sin markdown) incluyendo únicamente claves de la lista que falten y tengas fundamento para llenar.",
-        `Lista de campos candidatos (vacíos ahora): ${emptyFields.join(", ")}.`,
-        "No repitas textos largos si ya existen en articulo/requisito; para vacíos inferidos usa formulación clara y breve.",
-        "fecha_publicacion en formato YYYY-MM-DD si aplica.",
-        "impacto_economico: entero 1-10; probabilidad_incumplimiento: entero 1-5; multa_estimada_usd: número en USD si hay base (si no, omite).",
-        "prioridad solo si está vacía: uno de critico | alto | medio | bajo según gravedad.",
-        "No inventes URLs: link_fuente_oficial y fuente_verificada_url solo si aparecen en el extracto normativo.",
-        "No devuelvas un objeto vacío {}. Si no aportas ningún campo, usa sin_normativa_en_base como arriba.",
+        "EXCEPCIÓN (último recurso, debe ser rara): solo si, tras razonar, no puedes completar ningún campo vacío con ningún grado útil de certeza (p. ej. fila totalmente aislada sin norma, sector o requisito identificable), responde ÚNICAMENTE:",
+        '{"sin_normativa_en_base":true}',
+        "No uses sin_normativa_en_base por comodidad; el caso normal es devolver campos rellenados.",
         "",
         "### Contexto negocio\n" + negocioCtx,
         "",
         "### Fila (campos clave)\n" + rowJson,
         "",
-        "### Extracto normativa (opcional)\n" + (normativaExcerpt || "(sin documento vinculado en base; no inventes normas — si no alcanza, sin_normativa_en_base)"),
+        "### Extracto normativa (opcional)\n" +
+          (normativaExcerpt || "(sin documento vinculado: completa igualmente lo que el contexto y tu conocimiento permitan; reserva sin_normativa_en_base solo si es imposible aportar nada útil.)"),
         "",
-        "Responde únicamente con el JSON objeto."
+        "Responde únicamente con el objeto JSON."
       ].join("\n");
 
       let raw: string;
@@ -273,8 +274,7 @@ export async function POST(req: Request) {
       }
 
       if (Object.keys(patch).length === 0) {
-        anySinNormativa = true;
-        notes.push(`${id}: sin completar (sin fundamento / sin normativa)`);
+        notes.push(`${id}: IA no aplicó valores válidos tras validación`);
         continue;
       }
 

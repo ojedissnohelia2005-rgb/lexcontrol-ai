@@ -8,7 +8,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="border-b border-borderSoft bg-cream">
           <Topbar />
         </div>
-        <main className="flex-1 px-6 pb-20 pt-6">{children}</main>
+        <main className="flex-1 px-6 pb-28 pt-6">{children}</main>
         <BottomNav />
       </div>
     </div>

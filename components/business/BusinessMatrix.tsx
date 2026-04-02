@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { estimateUsdFromSanction, classifyPrioridad, computePriorityScore } from "@/lib/finance";
 import { isSuperAdminEmail } from "@/lib/roles";
 import { labelClasificacionDoc } from "@/lib/normativa-titles";
 import { fetchNormativaDocsMiniRowsForBusiness, type NormativaMiniRow } from "@/lib/normativa-docs-query";
 import { IaMarkdownStream } from "@/components/IaMarkdownStream";
+import { MATRIZ_TRACKED_EDIT_FIELDS } from "@/lib/matriz-tracked-fields";
 
 type Row = {
   id: string;
@@ -125,6 +126,14 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
   const [qaPropuestaId, setQaPropuestaId] = useState<string | null>(null);
   const [fillingBlanks, setFillingBlanks] = useState(false);
   const [deletingRowId, setDeletingRowId] = useState<string | null>(null);
+
+  const rowsRef = useRef<Row[]>([]);
+  const rowEditBaseline = useRef<Map<string, Row>>(new Map());
+  const notifyTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
 
   const canApprove = currentRole === "admin" || currentRole === "super_admin" || isSuperAdminEmail(email);
   const canEditMatrix = Boolean(currentUserId && supabase);
@@ -258,14 +267,74 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
     else await loadAll();
   }
 
+  async function flushMatrizEditNotify(rowId: string) {
+    notifyTimersRef.current.delete(rowId);
+    const before = rowEditBaseline.current.get(rowId);
+    const after = rowsRef.current.find((r) => r.id === rowId);
+    if (!before || !after) {
+      rowEditBaseline.current.delete(rowId);
+      return;
+    }
+    const campos: string[] = [];
+    const snapshotAntes: Record<string, unknown> = {};
+    const snapshotDespues: Record<string, unknown> = {};
+    for (const key of MATRIZ_TRACKED_EDIT_FIELDS) {
+      const b = before[key as keyof Row];
+      const a = after[key as keyof Row];
+      const same = JSON.stringify(b) === JSON.stringify(a);
+      if (!same) {
+        campos.push(key);
+        snapshotAntes[key] = b;
+        snapshotDespues[key] = a;
+      }
+    }
+    if (campos.length === 0) {
+      rowEditBaseline.current.delete(rowId);
+      return;
+    }
+    try {
+      const res = await fetch("/api/matriz/notify-edit", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          negocio_id: negocioId,
+          matriz_row_id: rowId,
+          campos_afectados: campos,
+          snapshot_antes: snapshotAntes,
+          snapshot_despues: snapshotDespues
+        })
+      });
+      if (res.ok) rowEditBaseline.current.set(rowId, { ...after });
+    } catch {
+      // sin bloquear edición
+    }
+  }
+
   async function updateRow(id: string, patch: Partial<Row>) {
     setError(null);
     if (!supabase) {
       setError("Falta configurar Supabase en .env.local");
       return;
     }
+    const prev = rows.find((r) => r.id === id);
     const { error: e } = await supabase.from("matriz_cumplimiento").update(patch).eq("id", id);
-    if (e) setError(e.message);
+    if (e) {
+      setError(e.message);
+      return;
+    }
+    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+    if (canAdminMatrix || !prev) return;
+    if (!rowEditBaseline.current.has(id)) {
+      rowEditBaseline.current.set(id, { ...prev });
+    }
+    const prevT = notifyTimersRef.current.get(id);
+    if (prevT) clearTimeout(prevT);
+    notifyTimersRef.current.set(
+      id,
+      setTimeout(() => {
+        void flushMatrizEditNotify(id);
+      }, 3200)
+    );
   }
 
   async function fillMatrixBlanks() {
@@ -307,6 +376,10 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
     setDeletingRowId(rowId);
     setError(null);
     try {
+      rowEditBaseline.current.delete(rowId);
+      const t = notifyTimersRef.current.get(rowId);
+      if (t) clearTimeout(t);
+      notifyTimersRef.current.delete(rowId);
       const { error: e } = await supabase.from("matriz_cumplimiento").delete().eq("id", rowId);
       if (e) throw e;
       await loadAll();

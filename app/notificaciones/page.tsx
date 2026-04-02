@@ -29,17 +29,39 @@ type AlertaActualizacion = {
   nivel_confianza: number | null;
 };
 
+type MatrizEditAlerta = {
+  id: string;
+  created_at: string;
+  negocio_id: string;
+  matriz_row_id: string;
+  campos_afectados: string[];
+  revisado: boolean;
+  negocios: { nombre: string } | null;
+};
+
 function NotificacionesClient() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [email, setEmail] = useState<string | null>(null);
+  const [profileRol, setProfileRol] = useState<string>("user");
   const [alertas, setAlertas] = useState<Alerta[]>([]);
   const [nuevosUsuarios, setNuevosUsuarios] = useState<NuevoUsuario[]>([]);
   const [actualizaciones, setActualizaciones] = useState<AlertaActualizacion[]>([]);
+  const [matrizEdits, setMatrizEdits] = useState<MatrizEditAlerta[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!supabase) return;
-    supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? null));
+    supabase.auth.getUser().then(({ data }) => {
+      setEmail(data.user?.email ?? null);
+      const uid = data.user?.id;
+      if (!uid) return;
+      supabase
+        .from("profiles")
+        .select("rol")
+        .eq("id", uid)
+        .maybeSingle()
+        .then(({ data: p }) => setProfileRol(String((p as { rol?: string } | null)?.rol ?? "user")));
+    });
   }, [supabase]);
 
   useEffect(() => {
@@ -78,6 +100,39 @@ function NotificacionesClient() {
       .then(({ data }) => setActualizaciones((data ?? []) as AlertaActualizacion[]));
   }, [supabase]);
 
+  useEffect(() => {
+    if (!supabase || (profileRol !== "admin" && profileRol !== "super_admin")) {
+      setMatrizEdits([]);
+      return;
+    }
+    supabase
+      .from("matriz_edit_alertas")
+      .select("id,created_at,negocio_id,matriz_row_id,campos_afectados,revisado, negocios(nombre)")
+      .eq("revisado", false)
+      .order("created_at", { ascending: false })
+      .limit(30)
+      .then(({ data, error }) => {
+        if (error) {
+          setMatrizEdits([]);
+          return;
+        }
+        const raw = (data ?? []) as Array<
+          Omit<MatrizEditAlerta, "negocios"> & { negocios: { nombre: string } | { nombre: string }[] | null }
+        >;
+        setMatrizEdits(
+          raw.map((row) => {
+            const n = row.negocios;
+            const nombre =
+              n && !Array.isArray(n) ? n.nombre : Array.isArray(n) && n[0] ? n[0].nombre : undefined;
+            return {
+              ...row,
+              negocios: nombre != null ? { nombre } : null
+            };
+          })
+        );
+      });
+  }, [supabase, profileRol]);
+
   const isSuper = isSuperAdminEmail(email);
 
   async function marcarRevisada(tipo: "legal" | "actualizacion", id: string) {
@@ -97,6 +152,42 @@ function NotificacionesClient() {
       }
     } catch {
       // ignore error visual por ahora
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function dejarCambioMatriz(id: string) {
+    setBusyId(id);
+    try {
+      const res = await fetch("/api/matriz/ack-matriz-edit", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id })
+      });
+      const data = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || data.error) throw new Error(data.error ?? "Error");
+      setMatrizEdits((prev) => prev.filter((a) => a.id !== id));
+    } catch {
+      // ignore
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function deshacerCambioMatriz(id: string) {
+    setBusyId(id);
+    try {
+      const res = await fetch("/api/matriz/revert-matriz-edit", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id })
+      });
+      const data = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || data.error) throw new Error(data.error ?? "Error");
+      setMatrizEdits((prev) => prev.filter((a) => a.id !== id));
+    } catch {
+      // ignore
     } finally {
       setBusyId(null);
     }
@@ -183,6 +274,52 @@ function NotificacionesClient() {
             )}
           </div>
         </div>
+
+        {profileRol === "admin" || profileRol === "super_admin" ? (
+          <div className="rounded-2xl bg-white p-5 shadow-card ring-1 ring-borderSoft lg:col-span-2">
+            <div className="text-sm font-medium">Cambios en matrices de cumplimiento</div>
+            <div className="mt-2 text-xs text-charcoal/60">
+              Un usuario editó celdas en una matriz. Puedes aceptar el cambio (queda como está) o deshacerlo (vuelve al valor anterior en los campos afectados).
+            </div>
+            <div className="mt-3 space-y-3 max-h-80 overflow-y-auto">
+              {matrizEdits.length === 0 ? (
+                <div className="rounded-xl bg-cream px-3 py-3 text-xs text-charcoal/70 ring-1 ring-borderSoft">
+                  No hay ediciones pendientes de revisión.
+                </div>
+              ) : (
+                matrizEdits.map((a) => (
+                  <div key={a.id} className="rounded-xl bg-cream px-3 py-3 text-xs text-charcoal/80 ring-1 ring-borderSoft">
+                    <div className="text-sm font-semibold text-charcoal">
+                      {a.negocios?.nombre ?? "Negocio"} · Fila {a.matriz_row_id.slice(0, 8)}…
+                    </div>
+                    <div className="mt-1 text-[11px] text-charcoal/60">{new Date(a.created_at).toLocaleString()}</div>
+                    <div className="mt-1 text-[11px] text-charcoal/70">
+                      Campos: {a.campos_afectados.join(", ")}
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={busyId === a.id}
+                        className="rounded-lg bg-charcoal px-3 py-1 text-[11px] text-white hover:bg-charcoal/90 disabled:opacity-50"
+                        onClick={() => void dejarCambioMatriz(a.id)}
+                      >
+                        {busyId === a.id ? "…" : "Dejar cambio"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busyId === a.id}
+                        className="rounded-lg bg-white px-3 py-1 text-[11px] ring-1 ring-borderSoft hover:bg-cream/70 disabled:opacity-50"
+                        onClick={() => void deshacerCambioMatriz(a.id)}
+                      >
+                        Deshacer
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        ) : null}
 
         <div className="rounded-2xl bg-white p-5 shadow-card ring-1 ring-borderSoft">
           <div className="text-sm font-medium">Posibles actualizaciones de normativa</div>

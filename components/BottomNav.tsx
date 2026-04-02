@@ -21,7 +21,7 @@ function IconShield({ className }: { className?: string }) {
   );
 }
 
-const items = [
+const baseItems = [
   { href: "/dashboard", label: "Dashboard", Icon: IconDashboard },
   { href: "/negocios", label: "Negocios", Icon: IconBuilding },
   { href: "/ai-notebook", label: "AI Notebook", Icon: IconNotebook },
@@ -54,11 +54,49 @@ export function BottomNav() {
   }, []);
 
   const showTransparencia = isSuperAdminEmail(email);
+  const items = useMemo(() => {
+    if (showTransparencia) {
+      return [...baseItems, { href: "/transparencia", label: "Transparencia", Icon: IconShield }];
+    }
+    return baseItems;
+  }, [showTransparencia]);
+
+  const n = items.length;
 
   return (
-    <nav className="sticky bottom-0 z-30 border-t border-white/15 bg-coffeeNav px-4 py-2 text-xs text-white shadow-[0_-4px_16px_rgba(0,0,0,0.2)]">
-      <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-2">
-        <div className="flex flex-1 items-center justify-around gap-1">
+    <nav className="pointer-events-none fixed bottom-0 left-0 right-0 z-30 flex justify-center px-2 pb-[max(0.35rem,env(safe-area-inset-bottom))]">
+      <div className="pointer-events-auto relative w-full max-w-[min(100%,32rem)]">
+        <svg
+          className="absolute bottom-0 left-1/2 block w-[118%] max-w-none -translate-x-1/2 text-coffeeNav drop-shadow-[0_-10px_36px_rgba(0,0,0,0.35)]"
+          style={{ height: "5.5rem" }}
+          viewBox="0 0 360 80"
+          preserveAspectRatio="xMidYMax meet"
+          aria-hidden
+        >
+          <defs>
+            <linearGradient id="bottomNavArcHi" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="rgba(255,255,255,0.14)" />
+              <stop offset="45%" stopColor="rgba(255,255,255,0)" />
+              <stop offset="100%" stopColor="rgba(0,0,0,0.18)" />
+            </linearGradient>
+          </defs>
+          <path
+            fill="currentColor"
+            d="M 0 32 Q 180 96 360 32 L 360 80 L 0 80 Z"
+          />
+          <path fill="url(#bottomNavArcHi)" d="M 0 32 Q 180 96 360 32 L 360 80 L 0 80 Z" />
+        </svg>
+
+        <div
+          className="absolute inset-x-[6%] bottom-2 top-2 z-0 flex rounded-t-[999px] overflow-hidden opacity-[0.22] pointer-events-none"
+          aria-hidden
+        >
+          {Array.from({ length: n }).map((_, i) => (
+            <div key={i} className="flex-1 border-r border-white/25 last:border-r-0" />
+          ))}
+        </div>
+
+        <div className="relative z-10 flex items-end justify-between gap-0.5 px-3 pb-2.5 pt-3">
           {items.map(({ href, label, Icon }) => {
             const active = pathname?.startsWith(href);
             const isNotif = href === "/notificaciones";
@@ -67,33 +105,20 @@ export function BottomNav() {
                 key={href}
                 href={href}
                 className={cn(
-                  "flex flex-col items-center rounded-xl px-2 py-1.5 transition",
-                  active && "bg-white/20 text-white shadow-sm",
-                  !active && "text-white/85 hover:bg-white/10 hover:text-white",
-                  isNotif && hasUnread && !active && "bg-red-600/90 text-white"
+                  "flex min-w-0 flex-1 flex-col items-center rounded-2xl px-1 py-1 text-white transition",
+                  active && "bg-white/20 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]",
+                  !active && "text-white/90 hover:bg-white/12 hover:text-white",
+                  isNotif && hasUnread && !active && "bg-red-700/85 text-white"
                 )}
               >
-                <Icon className="h-4 w-4" />
-                <span className="mt-1 text-[10px]">{label}</span>
-                {isNotif && hasUnread ? <span className="mt-0.5 h-1.5 w-1.5 rounded-full bg-white" /> : null}
+                <Icon className="h-[18px] w-[18px] shrink-0" />
+                <span className="mt-1 line-clamp-2 text-center text-[9px] font-medium leading-tight">{label}</span>
+                {isNotif && hasUnread ? <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-white" /> : null}
               </Link>
             );
           })}
-          {showTransparencia ? (
-            <Link
-              href="/transparencia"
-              className={cn(
-                "flex flex-col items-center rounded-xl px-2 py-1.5 text-[10px] transition",
-                pathname?.startsWith("/transparencia") ? "bg-white/20 text-white shadow-sm" : "text-white/85 hover:bg-white/10 hover:text-white"
-              )}
-            >
-              <IconShield className="h-4 w-4" />
-              <span className="mt-1">Transparencia</span>
-            </Link>
-          ) : null}
         </div>
       </div>
     </nav>
   );
 }
-
