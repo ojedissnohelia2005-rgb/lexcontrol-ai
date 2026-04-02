@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
-// Negocios disponibles para registro. Se listan todos para que el admin pueda gestionar acceso por clave.
+// Lista pública de negocios para el flujo de registro «Negocio ya existente» (elige supervisor).
 export async function GET() {
   try {
     const admin = createSupabaseAdminClient();

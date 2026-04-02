@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { cn } from "@/lib/utils";
 
 type Actividad = {
   id: string;
@@ -13,6 +14,7 @@ export function BusinessSpecificTask({ negocioId }: { negocioId: string }) {
   const [actividades, setActividades] = useState<Actividad[]>([]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [msgTone, setMsgTone] = useState<"ok" | "warn">("ok");
   const [error, setError] = useState<string | null>(null);
 
   const loadActividades = useCallback(async () => {
@@ -37,6 +39,7 @@ export function BusinessSpecificTask({ negocioId }: { negocioId: string }) {
     setBusy(true);
     setError(null);
     setMsg(null);
+    setMsgTone("ok");
     try {
       const res = await fetch(`/api/negocios/${negocioId}/tarea-especifica`, {
         method: "POST",
@@ -47,9 +50,21 @@ export function BusinessSpecificTask({ negocioId }: { negocioId: string }) {
           actividad_id: actividadId || undefined
         })
       });
-      const data = (await res.json()) as { ok?: boolean; items_generados?: number; error?: string };
+      const data = (await res.json()) as {
+        ok?: boolean;
+        items_generados?: number;
+        error?: string;
+        aviso?: string;
+      };
       if (!res.ok || data.error) throw new Error(data.error ?? "No se pudo generar propuestas");
-      setMsg(`Listo: la IA generó ${data.items_generados ?? 0} propuesta(s) en la matriz para esta tarea.`);
+      const n = data.items_generados ?? 0;
+      setMsgTone(n > 0 ? "ok" : "warn");
+      setMsg(
+        n > 0
+          ? `Listo: la IA generó ${n} propuesta(s) en Propuestas pendientes para esta tarea.`
+          : (data.aviso ??
+            "La IA no generó ítems. Detalla más la tarea o sube normativa relevante (p. ej. Código del Trabajo) en AI Notebook.")
+      );
       setTarea("");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Error");
@@ -64,14 +79,26 @@ export function BusinessSpecificTask({ negocioId }: { negocioId: string }) {
         <div>
           <div className="text-sm font-medium">Tarea específica para la IA</div>
           <div className="mt-1 text-xs text-charcoal/60">
-            Describe un escenario o proceso muy concreto que no quedó claro en la descripción general. La IA usará la normativa en memoria de este negocio para
-            proponer nuevos requisitos en la matriz.
+            Describe un escenario o proceso concreto. La IA combina los <strong>PDFs en biblioteca</strong> (global y del negocio) con{" "}
+            <strong>conocimiento jurídico de Ecuador</strong> (p. ej. Código del Trabajo cuando la tarea o la actividad lo ameriten) para proponer requisitos
+            en <strong>Propuestas pendientes</strong>.
           </div>
         </div>
       </div>
 
       {error ? <div className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-200">{error}</div> : null}
-      {msg ? <div className="mt-3 rounded-xl bg-green-50 px-3 py-2 text-xs text-green-900 ring-1 ring-green-200">{msg}</div> : null}
+      {msg ? (
+        <div
+          className={cn(
+            "mt-3 rounded-xl px-3 py-2 text-xs ring-1",
+            msgTone === "ok"
+              ? "bg-green-50 text-green-900 ring-green-200"
+              : "bg-amber-50 text-amber-950 ring-amber-200"
+          )}
+        >
+          {msg}
+        </div>
+      ) : null}
 
       <div className="mt-4 space-y-3">
         <textarea

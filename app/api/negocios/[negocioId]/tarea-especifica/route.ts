@@ -12,6 +12,9 @@ const BodySchema = z.object({
   actividad_id: z.string().uuid().optional()
 });
 
+const MAX_DOCS = 10;
+const CHARS_PER_DOC = 14_000;
+
 export async function POST(req: Request, ctx: RouteCtx) {
   try {
     const { negocioId } = await ctx.params;
@@ -28,41 +31,61 @@ export async function POST(req: Request, ctx: RouteCtx) {
       .single();
     if (nErr || !negocio) return NextResponse.json({ error: "Negocio no encontrado o sin acceso" }, { status: 404 });
 
+    let actividadNombre: string | null = null;
+    if (body.actividad_id) {
+      const { data: act } = await supabase
+        .from("negocio_actividades")
+        .select("nombre")
+        .eq("id", body.actividad_id)
+        .eq("negocio_id", negocioId)
+        .maybeSingle();
+      actividadNombre = (act as { nombre?: string } | null)?.nombre ?? null;
+    }
+
     const { data: docs, error: dErr } = await supabase
       .from("normativa_docs")
-      .select("id,titulo,texto_extraido")
-      .is("negocio_id", null)
+      .select("id,titulo,texto_extraido,negocio_id")
       .not("texto_extraido", "is", null)
+      .or(`negocio_id.is.null,negocio_id.eq.${negocioId}`)
       .order("created_at", { ascending: false })
-      .limit(6);
+      .limit(MAX_DOCS);
     if (dErr) return NextResponse.json({ error: dErr.message }, { status: 400 });
 
     const context =
-      (docs ?? [])
-        .map((d, i) => {
-          return [
-            `### DOC ${i + 1} id=${d.id} titulo=${d.titulo ?? "—"}`,
-            String(d.texto_extraido ?? "").slice(0, 20_000)
-          ].join("\n");
-        })
-        .join("\n\n") || "Sin normativa cargada para este negocio.";
+      (docs ?? []).length > 0
+        ? (docs ?? [])
+            .map((d, i) => {
+              return [
+                `### DOC ${i + 1} id=${d.id} titulo=${d.titulo ?? "—"}`,
+                String(d.texto_extraido ?? "").slice(0, CHARS_PER_DOC)
+              ].join("\n");
+            })
+            .join("\n\n")
+        : "(No hay PDFs indexados aún en la biblioteca global ni en este negocio; igual debes razonar con conocimiento jurídico aplicable.)";
 
     const prompt = [
-      "Eres analista de cumplimiento en Ecuador (2026).",
-      "El usuario describe una TAREA ESPECÍFICA de este negocio que no quedó cubierta por la descripción general.",
-      "Usa EXCLUSIVAMENTE la normativa incluida en el CONTEXTO para proponer requisitos para la matriz de cumplimiento.",
+      "Eres analista senior de cumplimiento normativo en Ecuador (2026).",
       "",
-      "Devuelve SOLO JSON con la forma:",
-      "{ items: [ { tipo_norma, norma_nombre, fecha_publicacion, organismo_emisor, resumen_experto, campo_juridico, observaciones, proceso_actividad_relacionada, sponsor, responsable_proceso, articulo, requisito, sancion, cita_textual, link_fuente_oficial, fuente_verificada_url, area_competente, gerencia_competente, impacto_economico, probabilidad_incumplimiento } ] }",
+      "El usuario describe una TAREA ESPECÍFICA del negocio que puede no estar cubierta en la descripción general.",
       "",
-      "Reglas:",
-      "- Si no hay base normativa suficiente para responder, devuelve items: [].",
-      "- 'requisito' debe ser accionable y comprobable con evidencia.",
-      "- No inventes normas ajenas al contexto; si algo parece hipótesis, deja claro en 'observaciones'.",
+      "Fuentes de trabajo (en este orden):",
+      "1) CONTEXTO_NORMATIVO: extractos de PDFs ya cargados en el sistema (biblioteca común y/o normativa del negocio). Si un fragmento respalda un requisito, úsalo en cita_textual y enlaces si constan.",
+      "2) Conocimiento jurídico general: Código del Trabajo, reglamentos y normativa sectorial típica en Ecuador cuando la tarea o la actividad vinculada lo exijan (p. ej. obligaciones laborales, higiene, contratos, horarios, salud ocupacional, igualdad, etc.).",
+      "3) Cruza con nombre del negocio, sector, descripción y regulación especial para que cada requisito sea aplicable y accionable.",
       "",
-      `NEGOCIO nombre=${negocio.nombre} sector=${negocio.sector ?? "—"}`,
+      "Obligatorio sobre la salida:",
+      "- Devuelve un JSON ÚNICO con forma:",
+      "  { items: [ { tipo_norma, norma_nombre, fecha_publicacion, organismo_emisor, resumen_experto, campo_juridico, observaciones, proceso_actividad_relacionada, sponsor, responsable_proceso, articulo, requisito, sancion, cita_textual, link_fuente_oficial, fuente_verificada_url, area_competente, gerencia_competente, impacto_economico, probabilidad_incumplimiento } ] }",
+      "- Si la tarea es coherente y existe marco legal aplicable (laboral u otro), genera **al menos 3** ítems y **idealmente entre 4 y 8**, salvo que la descripción sea tan acotada que solo procedan 1–2; en ese caso explica en observaciones.",
+      "- Cada ítem: requisito medible, articulo referencial (p. ej. artículo o sección del Código del Trabajo o norma que cites), norma_nombre explícita.",
+      "- En observaciones indica si el texto debe verificarse en el Registro Oficial o fuente .gob.ec cuando uses conocimiento general sin extracto en CONTEXTO.",
+      "- No inventes URLs: link_fuente_oficial / fuente_verificada_url solo si son fiables o salen del CONTEXTO; si no, omite o deja null.",
+      "- Solo items: [] si la descripción es ilegible, fuera de alcance legal o imposible vincular a obligaciones razonables.",
+      "",
+      `NEGOCIO: nombre=${negocio.nombre} sector=${negocio.sector ?? "—"}`,
       `descripcion_general=${negocio.detalles_negocio ?? "—"}`,
       `regulacion_especial=${negocio.regulacion_actividades_especiales ?? "—"}`,
+      actividadNombre ? `ACTIVIDAD_VINCULADA=${actividadNombre}` : "ACTIVIDAD_VINCULADA=(ninguna)",
       "",
       `TAREA_ESPECIFICA: ${body.descripcion}`,
       "",
@@ -81,12 +104,14 @@ export async function POST(req: Request, ctx: RouteCtx) {
     const m = text.match(/\{[\s\S]*\}/);
     if (!m) return NextResponse.json({ error: "IA sin JSON", raw: text }, { status: 502 });
     const parsed = JSON.parse(m[0]) as { items?: GeminiExtractionItem[] };
-    const items = Array.isArray(parsed.items) ? (parsed.items as GeminiExtractionItem[]) : [];
+    let items = Array.isArray(parsed.items) ? (parsed.items as GeminiExtractionItem[]) : [];
 
     if (items.length === 0) {
       return NextResponse.json({
         ok: true,
-        items_generados: 0
+        items_generados: 0,
+        aviso:
+          "La IA no devolvió ítems. Prueba con una descripción más concreta o sube en AI Notebook el Código del Trabajo u otra norma laboral para reforzar el contexto."
       });
     }
 
@@ -123,7 +148,8 @@ export async function POST(req: Request, ctx: RouteCtx) {
         extra: {
           origen: "tarea_especifica",
           descripcion_tarea: body.descripcion,
-          generado_por: userData.user.id
+          generado_por: userData.user.id,
+          actividad_nombre: actividadNombre
         }
       };
     });
@@ -139,4 +165,3 @@ export async function POST(req: Request, ctx: RouteCtx) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Error" }, { status: 400 });
   }
 }
-

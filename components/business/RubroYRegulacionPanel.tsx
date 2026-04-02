@@ -13,7 +13,6 @@ type NegocioRow = {
   normativa_actualizar_nota: string | null;
   normativa_actualizar_urls: string | null;
   guia_fuentes_ia: string | null;
-  clave_registro?: string | null;
 };
 
 export function RubroYRegulacionPanel({ negocioId }: { negocioId: string }) {
@@ -31,7 +30,6 @@ export function RubroYRegulacionPanel({ negocioId }: { negocioId: string }) {
   const [regulacion, setRegulacion] = useState("");
   const [notaActualizar, setNotaActualizar] = useState("");
   const [urlsActualizar, setUrlsActualizar] = useState("");
-  const [claveRegistro, setClaveRegistro] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!supabase) return;
@@ -41,7 +39,7 @@ export function RubroYRegulacionPanel({ negocioId }: { negocioId: string }) {
       const { data, error: e } = await supabase
         .from("negocios")
         .select(
-          "id,nombre,sector,detalles_negocio,regulacion_actividades_especiales,normativa_actualizar_nota,normativa_actualizar_urls,guia_fuentes_ia,clave_registro"
+          "id,nombre,sector,detalles_negocio,regulacion_actividades_especiales,normativa_actualizar_nota,normativa_actualizar_urls,guia_fuentes_ia"
         )
         .eq("id", negocioId)
         .single();
@@ -53,7 +51,6 @@ export function RubroYRegulacionPanel({ negocioId }: { negocioId: string }) {
       setNotaActualizar(n.normativa_actualizar_nota ?? "");
       setUrlsActualizar(n.normativa_actualizar_urls ?? "");
       setGuiaPreview(n.guia_fuentes_ia ?? null);
-      setClaveRegistro(n.clave_registro ?? null);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Error al cargar negocio");
     } finally {
@@ -268,46 +265,7 @@ export function RubroYRegulacionPanel({ negocioId }: { negocioId: string }) {
                 {deleteBusy ? "Eliminando..." : "Eliminar guía IA"}
               </button>
             ) : null}
-            {canAdmin ? (
-              <button
-                type="button"
-                className="rounded-xl bg-white px-4 py-2 text-sm text-charcoal ring-1 ring-borderSoft hover:bg-cream/70 disabled:opacity-50"
-                onClick={async () => {
-                  try {
-                    const res = await fetch(`/api/negocios/${negocioId}/registro-clave`, {
-                      method: "POST",
-                      credentials: "include",
-                      headers: { "content-type": "application/json" },
-                      body: JSON.stringify({ regenerate: true })
-                    });
-                    const data = (await res.json()) as { ok?: boolean; clave_registro?: string; error?: string };
-                    if (!res.ok || data.error) throw new Error(data.error ?? "No se pudo generar clave");
-                    setClaveRegistro(data.clave_registro ?? null);
-                  } catch (e: unknown) {
-                    setError(e instanceof Error ? e.message : "Error generando clave");
-                  }
-                }}
-              >
-                {claveRegistro ? "Regenerar clave de registro" : "Generar clave de registro"}
-              </button>
-            ) : null}
           </div>
-
-          {claveRegistro ? (
-            <div className="rounded-xl bg-cream px-3 py-3 text-xs text-charcoal/80 ring-1 ring-borderSoft">
-              <div className="font-medium text-charcoal">Clave de registro activa</div>
-              <div className="mt-1 font-mono text-sm">{claveRegistro}</div>
-              <div className="mt-1 text-[11px] text-charcoal/60">
-                Compártela solo con usuarios que deban registrarse a este negocio. Tras un uso correcto, se invalidará y podrás generar otra.
-              </div>
-            </div>
-          ) : (
-            canAdmin && (
-              <div className="rounded-xl bg-cream px-3 py-3 text-xs text-charcoal/60 ring-1 ring-borderSoft">
-                No hay clave de registro activa. Genera una para permitir que nuevos usuarios se adhieran a este negocio.
-              </div>
-            )
-          )}
 
           {(guiaPreview ?? row?.guia_fuentes_ia) ? (
             <div className="rounded-2xl bg-cream px-5 py-5 ring-1 ring-borderSoft">

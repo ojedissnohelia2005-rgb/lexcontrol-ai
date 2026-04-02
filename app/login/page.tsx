@@ -71,7 +71,6 @@ export default function LoginPage() {
   const [negocioId, setNegocioId] = useState("");
   const [supervisores, setSupervisores] = useState<Array<{ id: string; nombre: string | null; email: string | null }>>([]);
   const [supervisorId, setSupervisorId] = useState("");
-  const [claveNegocio, setClaveNegocio] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const submitLock = useRef(false);
@@ -157,7 +156,7 @@ export default function LoginPage() {
                   tipo_registro: tipoRegistro || null,
                   negocio_solicitado_id: tipoRegistro === "negocio_existente" ? negocioId || null : null,
                   supervisor_solicitado_id: tipoRegistro === "negocio_existente" ? supervisorId || null : null,
-                  clave_negocio: tipoRegistro === "negocio_existente" ? claveNegocio || null : null
+                  clave_negocio: null
                 }
               }
             : {
@@ -168,7 +167,7 @@ export default function LoginPage() {
                   tipo_registro: tipoRegistro || null,
                   negocio_solicitado_id: tipoRegistro === "negocio_existente" ? negocioId || null : null,
                   supervisor_solicitado_id: tipoRegistro === "negocio_existente" ? supervisorId || null : null,
-                  clave_negocio: tipoRegistro === "negocio_existente" ? claveNegocio || null : null
+                  clave_negocio: null
                 }
               }
         });
@@ -395,15 +394,6 @@ export default function LoginPage() {
                             El supervisor que elijas verá esta solicitud en Notificaciones / Transparencia.
                           </p>
                         </label>
-                        <label className="block">
-                          <div className="text-sm font-medium">Clave del negocio</div>
-                          <input
-                            className="mt-2 w-full rounded-xl bg-cream px-3 py-2 ring-1 ring-borderSoft outline-none focus:ring-2 focus:ring-roseOld"
-                            value={claveNegocio}
-                            onChange={(e) => setClaveNegocio(e.target.value)}
-                            placeholder="Clave entregada por tu administrador"
-                          />
-                        </label>
                       </>
                     ) : null}
                   </>
@@ -439,7 +429,7 @@ export default function LoginPage() {
                     !password ||
                     (mode === "register" &&
                       (tipoRegistro === "" ||
-                        (tipoRegistro === "negocio_existente" && (!negocioId || !supervisorId || !claveNegocio))))
+                        (tipoRegistro === "negocio_existente" && (!negocioId || !supervisorId))))
                   }
                   onClick={onSubmit}
                 >
