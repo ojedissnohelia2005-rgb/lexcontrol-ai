@@ -8,7 +8,11 @@ import { getSelectedNegocioId } from "@/components/business/BusinessPicker";
 import type { GeminiExtractionItem } from "@/app/api/gemini/extract/route";
 import { estimateUsdFromSanction, classifyPrioridad, computePriorityScore } from "@/lib/finance";
 import { PdfQnA } from "@/components/ai/PdfQnA";
-import { LEGAL_DRIVE_FOLDER_URL } from "@/lib/legal-constants";
+import {
+  GOOGLE_DRIVE_SERVICE_ACCOUNT_EMAIL_DEFAULT,
+  LEGAL_DRIVE_FOLDER_ID,
+  LEGAL_DRIVE_FOLDER_URL
+} from "@/lib/legal-constants";
 import type { ComparacionNormativa } from "@/types/domain";
 import { labelClasificacionDoc } from "@/lib/normativa-titles";
 import { fetchNormativaDocsForNegocio, type NormativaDocListRow } from "@/lib/normativa-docs-query";
@@ -51,6 +55,14 @@ export default function AiNotebookPage() {
   const [batchUploads, setBatchUploads] = useState<Array<{ fileName: string; ok: boolean; msg: string }>>([]);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [urlLines, setUrlLines] = useState("");
+  const [driveConfigured, setDriveConfigured] = useState<boolean | null>(null);
+  const [driveFiles, setDriveFiles] = useState<
+    { id: string; name: string; mimeType: string | null; modifiedTime: string | null }[]
+  >([]);
+  const [driveListBusy, setDriveListBusy] = useState(false);
+  const [driveListError, setDriveListError] = useState<string | null>(null);
+  const [driveServiceEmail, setDriveServiceEmail] = useState<string | null>(null);
+  const [selectedDriveIds, setSelectedDriveIds] = useState<Set<string>>(new Set());
 
   const loadNormativaDocs = useCallback(async () => {
     if (!supabase || !negocioId) return;
@@ -183,7 +195,7 @@ export default function AiNotebookPage() {
   async function applyIngestSuccess(
     data: IngestApiPayload,
     displayName: string,
-    origen: "pdf_upload" | "pdf_url"
+    origen: "pdf_upload" | "pdf_url" | "pdf_drive"
   ) {
     if (!supabase || !negocioId) return;
     const extracted = data.items ?? [];
@@ -314,6 +326,94 @@ export default function AiNotebookPage() {
     }
   }
 
+  function toggleDriveFile(id: string) {
+    setSelectedDriveIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function cargarListaDrive() {
+    setDriveListError(null);
+    setDriveListBusy(true);
+    try {
+      const res = await fetch(`/api/drive/list?folder_id=${encodeURIComponent(LEGAL_DRIVE_FOLDER_ID)}`, {
+        credentials: "include"
+      });
+      const data = (await res.json()) as {
+        configured?: boolean;
+        service_account_email?: string;
+        hint?: string;
+        error?: string;
+        files?: { id: string; name: string; mimeType: string | null; modifiedTime: string | null }[];
+      };
+      setDriveServiceEmail(data.service_account_email ?? GOOGLE_DRIVE_SERVICE_ACCOUNT_EMAIL_DEFAULT);
+      setDriveConfigured(Boolean(data.configured));
+      if (data.error) setDriveListError(data.error);
+      else if (!data.configured && data.hint) setDriveListError(data.hint);
+      else setDriveListError(null);
+      setDriveFiles(Array.isArray(data.files) ? data.files : []);
+    } catch (e: unknown) {
+      setDriveListError(e instanceof Error ? e.message : "No se pudo listar Drive");
+      setDriveFiles([]);
+    } finally {
+      setDriveListBusy(false);
+    }
+  }
+
+  async function importarSeleccionadosDrive() {
+    if (!negocioId) {
+      setError("Selecciona un negocio primero.");
+      return;
+    }
+    const ids = [...selectedDriveIds];
+    if (ids.length === 0) {
+      setError("Marca al menos un archivo de la lista de Drive.");
+      return;
+    }
+    if (ids.length > 12) {
+      setError("Máximo 12 archivos por lote desde Drive.");
+      return;
+    }
+    setError(null);
+    setBusy(true);
+    setItems([]);
+    setComparacion(null);
+    setLastNormativaDocId(null);
+    try {
+      if (!supabase) throw new Error("Falta configurar Supabase en .env.local");
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error("No autenticado");
+
+      for (let i = 0; i < ids.length; i++) {
+        const fileId = ids[i]!;
+        const meta = driveFiles.find((f) => f.id === fileId);
+        const label = meta?.name ?? fileId;
+        setBusyMsg(
+          `Drive ${i + 1}/${ids.length}: ${label} · ~${SECONDS_PER_PDF_ESTIMATE}s este archivo · ~${estimateBatchSeconds(ids.length - i)}s restantes (estimado)`
+        );
+        const res = await fetch("/api/drive/ingest", {
+          method: "POST",
+          credentials: "include",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ negocio_id: negocioId, file_id: fileId })
+        });
+        const rawText = await res.text();
+        const data = parseIngestJson(rawText, res);
+        await applyIngestSuccess(data, label, "pdf_drive");
+      }
+      setSelectedDriveIds(new Set());
+      setMapMsg(`Listo: ${ids.length} archivo(s) importados desde Drive (biblioteca + propuestas).`);
+    } catch (e: unknown) {
+      setError(formatUiError(e));
+    } finally {
+      setBusy(false);
+      setBusyMsg(null);
+    }
+  }
+
   async function procesarUrlsPdf() {
     if (!negocioId) {
       setError("Selecciona un negocio primero.");
@@ -429,7 +529,13 @@ export default function AiNotebookPage() {
         <a className="text-sidebarRose underline" href={LEGAL_DRIVE_FOLDER_URL} target="_blank" rel="noreferrer">
           Abrir normativa base
         </a>
-        . Descarga desde ahí y súbela aquí para que quede en la <strong>base del sistema</strong> (Supabase Storage + memoria). La sincronización automática con Google Drive no está conectada: esta app es la fuente de verdad interna; tras autorizar un reemplazo, actualizamos el registro/PDF guardado aquí.
+        . Comparte esa carpeta (o la que definas con{" "}
+        <code className="rounded bg-white/80 px-1 py-0.5 text-[10px]">GOOGLE_DRIVE_NORMATIVA_FOLDER_ID</code>) con la
+        cuenta de servicio{" "}
+        <code className="rounded bg-white/80 px-1 py-0.5 text-[10px]">{GOOGLE_DRIVE_SERVICE_ACCOUNT_EMAIL_DEFAULT}</code>{" "}
+        y configura <code className="rounded bg-white/80 px-1 py-0.5 text-[10px]">GOOGLE_DRIVE_PRIVATE_KEY</code> en
+        el servidor para <strong>listar e importar PDFs y Google Docs</strong> desde AI Notebook sin enlaces públicos. La
+        fuente de verdad interna sigue siendo Supabase; tras autorizar un reemplazo, el PDF queda guardado aquí.
       </div>
 
       <div className="mt-6 rounded-2xl bg-white/95 p-6 shadow-card ring-1 ring-borderSoft backdrop-blur">
@@ -575,6 +681,66 @@ export default function AiNotebookPage() {
                   className="mt-2 w-full rounded-xl bg-charcoal px-4 py-2 text-sm font-medium text-cream hover:bg-charcoal/90 disabled:opacity-50"
                 >
                   {busy ? "Procesando URLs…" : "Descargar e indexar URLs"}
+                </button>
+              </div>
+
+              <div className="rounded-xl bg-cream px-3 py-3 ring-1 ring-borderSoft">
+                <div className="text-sm font-medium">Desde Drive (cuenta de servicio)</div>
+                <div className="mt-1 text-xs text-charcoal/60">
+                  Lista PDFs y documentos de Google en la carpeta{" "}
+                  <code className="rounded bg-white/80 px-1 text-[10px]">{LEGAL_DRIVE_FOLDER_ID}</code> e impórtalos con
+                  la misma canalización que un PDF subido. Requiere clave privada en el servidor y carpeta compartida con{" "}
+                  {driveServiceEmail ?? GOOGLE_DRIVE_SERVICE_ACCOUNT_EMAIL_DEFAULT}.
+                </div>
+                <button
+                  type="button"
+                  disabled={driveListBusy || !supabase}
+                  onClick={() => void cargarListaDrive()}
+                  className="mt-2 w-full rounded-xl bg-white px-4 py-2 text-sm font-medium text-charcoal ring-1 ring-borderSoft hover:bg-cream/80 disabled:opacity-50"
+                >
+                  {driveListBusy ? "Consultando Drive…" : "Cargar lista desde Drive"}
+                </button>
+                {driveConfigured === false ? (
+                  <div className="mt-2 text-[11px] text-amber-800">
+                    Drive no está configurado en el servidor. {driveListError ?? "Añade GOOGLE_DRIVE_PRIVATE_KEY."}
+                  </div>
+                ) : null}
+                {driveConfigured === true && driveListError ? (
+                  <div className="mt-2 text-[11px] text-red-700">{driveListError}</div>
+                ) : null}
+                {driveFiles.length > 0 ? (
+                  <div className="mt-3 max-h-48 space-y-1.5 overflow-y-auto rounded-lg bg-white/90 p-2 ring-1 ring-borderSoft">
+                    {driveFiles.map((f) => (
+                      <label
+                        key={f.id}
+                        className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1 text-xs hover:bg-cream/80"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedDriveIds.has(f.id)}
+                          onChange={() => toggleDriveFile(f.id)}
+                        />
+                        <span className="leading-snug">
+                          <span className="font-medium text-charcoal">{f.name}</span>
+                          <span className="block text-[10px] text-charcoal/55">
+                            {f.mimeType === "application/vnd.google-apps.document" ? "Google Doc → PDF" : "PDF"} ·{" "}
+                            {f.modifiedTime ? new Date(f.modifiedTime).toLocaleString() : "—"}
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                ) : null}
+                {driveConfigured === true && !driveListBusy && !driveListError && driveFiles.length === 0 ? (
+                  <div className="mt-2 text-[11px] text-charcoal/55">No hay PDFs ni Google Docs en esa carpeta.</div>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={busy || !supabase || !negocioId || selectedDriveIds.size === 0 || driveFiles.length === 0}
+                  onClick={() => void importarSeleccionadosDrive()}
+                  className="mt-2 w-full rounded-xl bg-sidebarRose px-4 py-2 text-sm font-medium text-cream hover:opacity-90 disabled:opacity-50"
+                >
+                  {busy ? "Importando desde Drive…" : "Importar seleccionados desde Drive"}
                 </button>
               </div>
 
