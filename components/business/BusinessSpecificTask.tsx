@@ -79,9 +79,8 @@ export function BusinessSpecificTask({ negocioId }: { negocioId: string }) {
         <div>
           <div className="text-sm font-medium">Tarea específica para la IA</div>
           <div className="mt-1 text-xs text-charcoal/60">
-            Describe un escenario o proceso concreto. La IA combina los <strong>PDFs en biblioteca</strong> (global y del negocio) con{" "}
-            <strong>conocimiento jurídico de Ecuador</strong> (p. ej. Código del Trabajo cuando la tarea o la actividad lo ameriten) para proponer requisitos
-            en <strong>Propuestas pendientes</strong>.
+            Describe un escenario concreto. La IA <strong>prioriza</strong> lo que haya en los PDFs de la biblioteca; si no alcanza, propone con su conocimiento
+            (p. ej. laboral) y lo deja marcado como <strong>no respaldado en biblioteca</strong> para que verifiques en fuente oficial.
           </div>
         </div>
       </div>

@@ -15,6 +15,11 @@ const BodySchema = z.object({
 const MAX_DOCS = 10;
 const CHARS_PER_DOC = 14_000;
 
+const AVISO_SIN_BIBLIOTECA =
+  "No respaldado por PDF en la biblioteca del sistema (propuesta por conocimiento general de la IA). Verificar siempre en norma oficial / Registro Oficial antes de aplicar.";
+
+type ItemTarea = GeminiExtractionItem & { respaldado_en_biblioteca?: boolean };
+
 export async function POST(req: Request, ctx: RouteCtx) {
   try {
     const { negocioId } = await ctx.params;
@@ -51,36 +56,41 @@ export async function POST(req: Request, ctx: RouteCtx) {
       .limit(MAX_DOCS);
     if (dErr) return NextResponse.json({ error: dErr.message }, { status: 400 });
 
-    const context =
-      (docs ?? []).length > 0
-        ? (docs ?? [])
-            .map((d, i) => {
-              return [
-                `### DOC ${i + 1} id=${d.id} titulo=${d.titulo ?? "—"}`,
-                String(d.texto_extraido ?? "").slice(0, CHARS_PER_DOC)
-              ].join("\n");
-            })
-            .join("\n\n")
-        : "(No hay PDFs indexados aún en la biblioteca global ni en este negocio; igual debes razonar con conocimiento jurídico aplicable.)";
+    const hayDocs = (docs ?? []).length > 0;
+
+    const context = hayDocs
+      ? (docs ?? [])
+          .map((d, i) => {
+            return [
+              `### DOC ${i + 1} id=${d.id} titulo=${d.titulo ?? "—"}`,
+              String(d.texto_extraido ?? "").slice(0, CHARS_PER_DOC)
+            ].join("\n");
+          })
+          .join("\n\n")
+      : "(La biblioteca del sistema no tiene PDFs indexados todavía para este negocio/global; debes proponer igualmente según conocimiento jurídico y advertir falta de respaldo.)";
 
     const prompt = [
       "Eres analista senior de cumplimiento normativo en Ecuador (2026).",
       "",
-      "El usuario describe una TAREA ESPECÍFICA del negocio que puede no estar cubierta en la descripción general.",
+      "El usuario describe una TAREA ESPECÍFICA del negocio. Primero infiere el **ámbito jurídico principal** (laboral, tributario, ambiental, datos personales, sectorial, etc.) a partir de la tarea, la actividad vinculada y el sector del negocio.",
       "",
-      "Fuentes de trabajo (en este orden):",
-      "1) CONTEXTO_NORMATIVO: extractos de PDFs ya cargados en el sistema (biblioteca común y/o normativa del negocio). Si un fragmento respalda un requisito, úsalo en cita_textual y enlaces si constan.",
-      "2) Conocimiento jurídico general: Código del Trabajo, reglamentos y normativa sectorial típica en Ecuador cuando la tarea o la actividad vinculada lo exijan (p. ej. obligaciones laborales, higiene, contratos, horarios, salud ocupacional, igualdad, etc.).",
-      "3) Cruza con nombre del negocio, sector, descripción y regulación especial para que cada requisito sea aplicable y accionable.",
+      "Cadena de trabajo:",
+      "1) **Buscar en CONTEXTO_NORMATIVO** (PDFs ya cargados): si hay texto aplicable, construye requisitos anclados a ese texto (cita_textual breve, idealmente doc id en observaciones: «Respaldo: DOC n id=…»).",
+      "2) **Si no hay fragmento aplicable en el contexto** (o el tema no aparece en los PDFs), **igual propone** requisitos razonables usando tu conocimiento de normativa ecuatoriana vigente (ej. Código del Trabajo y reglamentos para obligaciones laborales).",
+      "3) Cuando el ítem **no** esté sustentado por un extracto del CONTEXTO, debes marcarlo claramente para el usuario (ver `respaldado_en_biblioteca` abajo).",
       "",
-      "Obligatorio sobre la salida:",
-      "- Devuelve un JSON ÚNICO con forma:",
-      "  { items: [ { tipo_norma, norma_nombre, fecha_publicacion, organismo_emisor, resumen_experto, campo_juridico, observaciones, proceso_actividad_relacionada, sponsor, responsable_proceso, articulo, requisito, sancion, cita_textual, link_fuente_oficial, fuente_verificada_url, area_competente, gerencia_competente, impacto_economico, probabilidad_incumplimiento } ] }",
-      "- Si la tarea es coherente y existe marco legal aplicable (laboral u otro), genera **al menos 3** ítems y **idealmente entre 4 y 8**, salvo que la descripción sea tan acotada que solo procedan 1–2; en ese caso explica en observaciones.",
-      "- Cada ítem: requisito medible, articulo referencial (p. ej. artículo o sección del Código del Trabajo o norma que cites), norma_nombre explícita.",
-      "- En observaciones indica si el texto debe verificarse en el Registro Oficial o fuente .gob.ec cuando uses conocimiento general sin extracto en CONTEXTO.",
-      "- No inventes URLs: link_fuente_oficial / fuente_verificada_url solo si son fiables o salen del CONTEXTO; si no, omite o deja null.",
-      "- Solo items: [] si la descripción es ilegible, fuera de alcance legal o imposible vincular a obligaciones razonables.",
+      "Devuelve un JSON ÚNICO con forma:",
+      "{ items: [ { respaldado_en_biblioteca, tipo_norma, norma_nombre, fecha_publicacion, organismo_emisor, resumen_experto, campo_juridico, observaciones, proceso_actividad_relacionada, sponsor, responsable_proceso, articulo, requisito, sancion, cita_textual, link_fuente_oficial, fuente_verificada_url, area_competente, gerencia_competente, impacto_economico, probabilidad_incumplimiento } ] }",
+      "",
+      "Clave obligatoria por ítem:",
+      "- **respaldado_en_biblioteca** (boolean): `true` solo si el requisito se apoya en un pasaje concreto del CONTEXTO_NORMATIVO. `false` si depende de conocimiento general porque no hay texto aplicable en los PDFs o el fragmento es insuficiente.",
+      "",
+      "Reglas:",
+      "- Si la tarea es coherente y hay marco legal aplicable, genera **al menos 3** ítems (ideal 4–8), mezclando si aplica: algunos con respaldo en PDF y otros solo conocimiento general con `respaldado_en_biblioteca: false`.",
+      "- Con `respaldado_en_biblioteca: false`: en **observaciones** explica que **no está respaldado por la biblioteca** y que debe **verificarse en fuente oficial** (Registro Oficial, .gob.ec, etc.).",
+      "- Con `respaldado_en_biblioteca: true`: cita_textual debe ser del contexto; en observaciones indica el id del documento (DOC … id=…).",
+      "- No inventes URLs: link_fuente_oficial / fuente_verificada_url solo si salen del CONTEXTO o son oficiales inequívocos; si no, null.",
+      "- Solo items: [] si la descripción es ilegible o imposible vincular a obligaciones razonables.",
       "",
       `NEGOCIO: nombre=${negocio.nombre} sector=${negocio.sector ?? "—"}`,
       `descripcion_general=${negocio.detalles_negocio ?? "—"}`,
@@ -103,8 +113,8 @@ export async function POST(req: Request, ctx: RouteCtx) {
 
     const m = text.match(/\{[\s\S]*\}/);
     if (!m) return NextResponse.json({ error: "IA sin JSON", raw: text }, { status: 502 });
-    const parsed = JSON.parse(m[0]) as { items?: GeminiExtractionItem[] };
-    let items = Array.isArray(parsed.items) ? (parsed.items as GeminiExtractionItem[]) : [];
+    const parsed = JSON.parse(m[0]) as { items?: ItemTarea[] };
+    let items = Array.isArray(parsed.items) ? (parsed.items as ItemTarea[]) : [];
 
     if (items.length === 0) {
       return NextResponse.json({
@@ -119,6 +129,11 @@ export async function POST(req: Request, ctx: RouteCtx) {
       const multa = estimateUsdFromSanction(it.sancion);
       const score = computePriorityScore(it.impacto_economico, it.probabilidad_incumplimiento);
       const prioridad = classifyPrioridad({ sancion: it.sancion, multa_estimada_usd: multa, priorityScore: score });
+      const respaldado = it.respaldado_en_biblioteca === true && hayDocs;
+      let observaciones = (it.observaciones ?? "").trim();
+      if (!respaldado && !observaciones.toLowerCase().includes("biblioteca del sistema")) {
+        observaciones = observaciones ? `${AVISO_SIN_BIBLIOTECA} ${observaciones}` : AVISO_SIN_BIBLIOTECA;
+      }
       return {
         negocio_id: negocioId,
         articulo: it.articulo || "—",
@@ -133,7 +148,7 @@ export async function POST(req: Request, ctx: RouteCtx) {
         organismo_emisor: it.organismo_emisor ?? null,
         resumen_experto: it.resumen_experto ?? null,
         campo_juridico: it.campo_juridico ?? null,
-        observaciones: it.observaciones ?? null,
+        observaciones: observaciones || null,
         proceso_actividad_relacionada: it.proceso_actividad_relacionada ?? null,
         sponsor: it.sponsor ?? null,
         responsable_proceso: it.responsable_proceso ?? null,
@@ -149,7 +164,9 @@ export async function POST(req: Request, ctx: RouteCtx) {
           origen: "tarea_especifica",
           descripcion_tarea: body.descripcion,
           generado_por: userData.user.id,
-          actividad_nombre: actividadNombre
+          actividad_nombre: actividadNombre,
+          respaldado_en_biblioteca: respaldado,
+          biblioteca_tenia_docs: hayDocs
         }
       };
     });
