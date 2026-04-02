@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { ingestNormativaPdf, PdfIngestError } from "@/lib/pdf-ingest";
+import { fetchPdfBufferFromUrl } from "@/lib/pdf-remote";
 
-/** Vercel / Node: PDF + Storage + IA puede superar el default de 10s en plan Pro. */
 export const runtime = "nodejs";
 export const maxDuration = 60;
+
+const BodySchema = z.object({
+  negocio_id: z.string().uuid(),
+  url: z.string().url()
+});
 
 function extractApiUrlFromReq(req: Request) {
   const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
@@ -13,37 +19,35 @@ function extractApiUrlFromReq(req: Request) {
   return new URL("/api/gemini/extract", req.url).toString();
 }
 
+/**
+ * Descarga un PDF público (URL directa o enlace de archivo de Google Drive) y lo procesa como /api/pdfs/process.
+ */
 export async function POST(req: Request) {
   try {
     const supabase = createSupabaseServerClient();
     const { data: userData } = await supabase.auth.getUser();
     if (!userData.user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
 
-    const form = await req.formData();
-    const file = form.get("file");
-    const negocio_id = String(form.get("negocio_id") ?? "");
-    const fuente_url_in = String(form.get("fuente_url") ?? "") || null;
-    const storage_path_in = String(form.get("storage_path") ?? "") || null;
+    const body = BodySchema.parse(await req.json());
 
-    if (!(file instanceof File)) return NextResponse.json({ error: "Archivo inválido" }, { status: 400 });
-    if (!negocio_id) return NextResponse.json({ error: "negocio_id requerido" }, { status: 400 });
-
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    const { buffer, suggestedFileName } = await fetchPdfBufferFromUrl(body.url);
 
     const result = await ingestNormativaPdf(supabase, {
       userId: userData.user.id,
-      negocioId: negocio_id,
+      negocioId: body.negocio_id,
       buffer,
-      fileName: file.name,
-      mimeType: file.type || "application/pdf",
-      fuente_url_in,
-      storage_path_in,
+      fileName: suggestedFileName,
+      mimeType: "application/pdf",
+      fuente_url_in: body.url.trim(),
+      storage_path_in: null,
       extractApiUrl: extractApiUrlFromReq(req)
     });
 
-    return NextResponse.json(result);
+    return NextResponse.json({ ...result, source_url: body.url.trim() });
   } catch (e: unknown) {
+    if (e instanceof z.ZodError) {
+      return NextResponse.json({ error: "Datos inválidos", details: e.flatten() }, { status: 400 });
+    }
     if (e instanceof PdfIngestError) {
       if (e.code === "GEMINI_QUOTA") {
         return NextResponse.json(
@@ -55,8 +59,8 @@ export async function POST(req: Request) {
           { status: 429 }
         );
       }
-      return NextResponse.json({ error: e.message, raw: e.extra?.raw }, { status: e.httpStatus });
+      return NextResponse.json({ error: e.message }, { status: e.httpStatus });
     }
-    return NextResponse.json({ error: e instanceof Error ? e.message : "Error procesando PDF" }, { status: 400 });
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Error" }, { status: 400 });
   }
 }

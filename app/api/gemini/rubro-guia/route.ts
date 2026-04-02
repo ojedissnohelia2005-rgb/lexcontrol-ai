@@ -51,7 +51,7 @@ function buildGuiaPrompt(negocio: {
     `Detalles: ${negocio.detalles_negocio ?? "—"}`,
     `Actividades / regulación especial: ${negocio.regulacion_actividades_especiales ?? "—"}`,
     `Normativa que el usuario cree desactualizada (nota): ${negocio.normativa_actualizar_nota ?? "—"}`,
-    `Enlaces / referencias aportadas: ${negocio.normativa_actualizar_urls ?? "—"}`,
+    `Enlaces / referencias aportadas (texto; intégralos en la guía como pistas de fuente o temas a contrastar; no puedes abrirlos en tiempo real): ${negocio.normativa_actualizar_urls ?? "—"}`,
     "",
     "Responde en español, tono profesional. Prioriza especificidad sobre amplitud."
   ].join("\n");

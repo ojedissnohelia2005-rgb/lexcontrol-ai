@@ -219,6 +219,11 @@ export function RubroYRegulacionPanel({ negocioId }: { negocioId: string }) {
 
           <label className="block">
             <div className="text-sm font-medium">Enlaces (Drive, Registro Oficial, PDFs)</div>
+            <div className="mt-1 text-xs text-charcoal/60">
+              Se guardan como <strong>texto de contexto</strong> para la guía IA (no se descargan solos). Para indexar PDFs en la biblioteca usa{" "}
+              <strong>AI Notebook</strong>: sube archivos o pega enlaces de <em>archivo</em> de Drive (uno por línea). Pulsa <strong>Guardar campos</strong> tras
+              editar.
+            </div>
             <textarea
               className="mt-2 min-h-[64px] w-full rounded-xl bg-cream px-3 py-2 text-sm ring-1 ring-borderSoft outline-none focus:ring-2 focus:ring-roseOld disabled:opacity-60"
               value={urlsActualizar}
@@ -271,6 +276,7 @@ export function RubroYRegulacionPanel({ negocioId }: { negocioId: string }) {
                   try {
                     const res = await fetch(`/api/negocios/${negocioId}/registro-clave`, {
                       method: "POST",
+                      credentials: "include",
                       headers: { "content-type": "application/json" },
                       body: JSON.stringify({ regenerate: true })
                     });

@@ -12,6 +12,7 @@ import { LEGAL_DRIVE_FOLDER_URL } from "@/lib/legal-constants";
 import type { ComparacionNormativa } from "@/types/domain";
 import { labelClasificacionDoc } from "@/lib/normativa-titles";
 import { fetchNormativaDocsForNegocio, type NormativaDocListRow } from "@/lib/normativa-docs-query";
+import { estimateBatchSeconds, SECONDS_PER_PDF_ESTIMATE } from "@/lib/pdf-remote";
 
 type NegocioMini = { id: string; nombre: string; sector: string | null; detalles_negocio: string | null };
 
@@ -49,6 +50,7 @@ export default function AiNotebookPage() {
   const [lastUploads, setLastUploads] = useState<Array<{ fileName: string; items: GeminiExtractionItem[] }>>([]);
   const [batchUploads, setBatchUploads] = useState<Array<{ fileName: string; ok: boolean; msg: string }>>([]);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [urlLines, setUrlLines] = useState("");
 
   const loadNormativaDocs = useCallback(async () => {
     if (!supabase || !negocioId) return;
@@ -110,6 +112,7 @@ export default function AiNotebookPage() {
     try {
       const res = await fetch("/api/gemini/map-negocio-normativa", {
         method: "POST",
+        credentials: "include",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ negocio_id: negocioId, normativa_doc_ids: ids })
       });
@@ -145,6 +148,7 @@ export default function AiNotebookPage() {
     try {
       const res = await fetch("/api/normativa/authorize-replace", {
         method: "POST",
+        credentials: "include",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           negocio_id: negocioId,
@@ -165,6 +169,109 @@ export default function AiNotebookPage() {
     }
   }
 
+  type IngestApiPayload = {
+    items?: GeminiExtractionItem[];
+    error?: string;
+    code?: string;
+    retry_after_seconds?: number;
+    normativa_doc_id?: string;
+    comparacion?: ComparacionNormativa;
+    fuente_url?: string | null;
+    storage_path?: string | null;
+  };
+
+  async function applyIngestSuccess(
+    data: IngestApiPayload,
+    displayName: string,
+    origen: "pdf_upload" | "pdf_url"
+  ) {
+    if (!supabase || !negocioId) return;
+    const extracted = data.items ?? [];
+    setItems(extracted);
+    if (data.normativa_doc_id) setLastNormativaDocId(data.normativa_doc_id);
+    if (data.comparacion) setComparacion(data.comparacion);
+    setLastUploads((prev) => [{ fileName: displayName, items: extracted }, ...prev].slice(0, 6));
+
+    const normativaDocId = data.normativa_doc_id;
+    const fuenteUrl = data.fuente_url ?? null;
+
+    const payload = extracted.map((it) => {
+      const multa = estimateUsdFromSanction(it.sancion);
+      const score = computePriorityScore(it.impacto_economico, it.probabilidad_incumplimiento);
+      const prioridad = classifyPrioridad({ sancion: it.sancion, multa_estimada_usd: multa, priorityScore: score });
+      return {
+        negocio_id: negocioId,
+        tipo_norma: it.tipo_norma ?? null,
+        norma_nombre: it.norma_nombre ?? null,
+        fecha_publicacion: it.fecha_publicacion ?? null,
+        organismo_emisor: it.organismo_emisor ?? null,
+        resumen_experto: it.resumen_experto ?? null,
+        campo_juridico: it.campo_juridico ?? null,
+        observaciones: it.observaciones ?? null,
+        proceso_actividad_relacionada: it.proceso_actividad_relacionada ?? null,
+        sponsor: it.sponsor ?? null,
+        responsable_proceso: it.responsable_proceso ?? null,
+        articulo: it.articulo || "—",
+        requisito: it.requisito,
+        sancion: it.sancion,
+        cita_textual: it.cita_textual,
+        link_fuente_oficial: it.link_fuente_oficial,
+        fuente_verificada_url: it.fuente_verificada_url ?? fuenteUrl,
+        gerencia_competente: it.gerencia_competente,
+        area_competente: it.area_competente,
+        multa_estimada_usd: multa,
+        impacto_economico: it.impacto_economico,
+        probabilidad_incumplimiento: it.probabilidad_incumplimiento,
+        prioridad,
+        estado: "pendiente" as const,
+        normativa_doc_id: normativaDocId ?? null,
+        extra: {
+          origen,
+          comparacion: data.comparacion ?? null,
+          obligacion_grupo_id: it.obligacion_grupo_id ?? null,
+          obligacion_grupo_etiqueta: it.obligacion_grupo_etiqueta ?? null
+        }
+      };
+    });
+
+    if (payload.length > 0) {
+      const { error: insErr } = await supabase.from("propuestas_pendientes").insert(payload);
+      if (insErr) throw insErr;
+    }
+
+    await supabase.from("audit_log").insert({
+      accion: "SUBIR_PDF_NORMATIVA",
+      tabla: "normativa_docs",
+      registro_id: null,
+      valor_nuevo: {
+        negocio_id: negocioId,
+        storage_path: data.storage_path ?? null,
+        fuente_url: fuenteUrl,
+        file_name: displayName,
+        comparacion: data.comparacion,
+        origen
+      }
+    });
+
+    await loadNormativaDocs();
+  }
+
+  function parseIngestJson(rawText: string, res: Response): IngestApiPayload {
+    let data: IngestApiPayload;
+    try {
+      data = JSON.parse(rawText) as IngestApiPayload;
+    } catch {
+      throw new Error(rawText.slice(0, 260));
+    }
+    if (!res.ok || data.error) {
+      if (res.status === 429 && data.code === "GEMINI_QUOTA") {
+        throw new Error(`Gemini sin cuota. Espera ${data.retry_after_seconds ?? 60}s y vuelve a intentar.`);
+      }
+      throw new Error(data.error ?? "No se pudo procesar el PDF");
+    }
+    return data;
+  }
+
   async function uploadPdf(file: File, opts?: { batch?: { i: number; total: number } }) {
     if (!negocioId) {
       setError("Selecciona un negocio primero.");
@@ -172,7 +279,13 @@ export default function AiNotebookPage() {
     }
     setError(null);
     setBusy(true);
-    setBusyMsg(opts?.batch ? `Procesando ${opts.batch.i + 1}/${opts.batch.total}: ${file.name}` : `Procesando: ${file.name}`);
+    const total = opts?.batch?.total ?? 1;
+    const estTotal = estimateBatchSeconds(total);
+    setBusyMsg(
+      opts?.batch
+        ? `Archivo ${opts.batch.i + 1}/${opts.batch.total}: ${file.name} · ~${SECONDS_PER_PDF_ESTIMATE}s c/u · cola ~${estTotal}s`
+        : `Procesando: ${file.name} · tiempo típico ~${SECONDS_PER_PDF_ESTIMATE}s`
+    );
     if (!opts?.batch) {
       setItems([]);
       setComparacion(null);
@@ -187,97 +300,10 @@ export default function AiNotebookPage() {
       form.set("file", file);
       form.set("negocio_id", negocioId);
 
-      const res = await fetch("/api/pdfs/process", { method: "POST", body: form });
+      const res = await fetch("/api/pdfs/process", { method: "POST", credentials: "include", body: form });
       const rawText = await res.text();
-      let data: {
-        items?: GeminiExtractionItem[];
-        error?: string;
-        code?: string;
-        retry_after_seconds?: number;
-        normativa_doc_id?: string;
-        comparacion?: ComparacionNormativa;
-        fuente_url?: string | null;
-        storage_path?: string | null;
-      };
-      try {
-        data = JSON.parse(rawText);
-      } catch {
-        // Respuesta no JSON (por ejemplo, HTML de error de Vercel)
-        throw new Error(rawText.slice(0, 260));
-      }
-      if (!res.ok || data.error) {
-        if (res.status === 429 && data.code === "GEMINI_QUOTA") {
-          throw new Error(`Gemini sin cuota. Espera ${data.retry_after_seconds ?? 60}s y vuelve a intentar.`);
-        }
-        throw new Error(data.error ?? "No se pudo procesar el PDF");
-      }
-      const extracted = data.items ?? [];
-      setItems(extracted);
-      if (data.normativa_doc_id) setLastNormativaDocId(data.normativa_doc_id);
-      if (data.comparacion) setComparacion(data.comparacion);
-      setLastUploads((prev) => [{ fileName: file.name, items: extracted }, ...prev].slice(0, 6));
-
-      const normativaDocId = data.normativa_doc_id;
-      const fuenteUrl = data.fuente_url ?? null;
-
-      const payload = extracted.map((it) => {
-        const multa = estimateUsdFromSanction(it.sancion);
-        const score = computePriorityScore(it.impacto_economico, it.probabilidad_incumplimiento);
-        const prioridad = classifyPrioridad({ sancion: it.sancion, multa_estimada_usd: multa, priorityScore: score });
-        return {
-          negocio_id: negocioId,
-          tipo_norma: it.tipo_norma ?? null,
-          norma_nombre: it.norma_nombre ?? null,
-          fecha_publicacion: it.fecha_publicacion ?? null,
-          organismo_emisor: it.organismo_emisor ?? null,
-          resumen_experto: it.resumen_experto ?? null,
-          campo_juridico: it.campo_juridico ?? null,
-          observaciones: it.observaciones ?? null,
-          proceso_actividad_relacionada: it.proceso_actividad_relacionada ?? null,
-          sponsor: it.sponsor ?? null,
-          responsable_proceso: it.responsable_proceso ?? null,
-          articulo: it.articulo || "—",
-          requisito: it.requisito,
-          sancion: it.sancion,
-          cita_textual: it.cita_textual,
-          link_fuente_oficial: it.link_fuente_oficial,
-          fuente_verificada_url: it.fuente_verificada_url ?? fuenteUrl,
-          gerencia_competente: it.gerencia_competente,
-          area_competente: it.area_competente,
-          multa_estimada_usd: multa,
-          impacto_economico: it.impacto_economico,
-          probabilidad_incumplimiento: it.probabilidad_incumplimiento,
-          prioridad,
-          estado: "pendiente",
-          normativa_doc_id: normativaDocId ?? null,
-          extra: {
-            origen: "pdf_upload",
-            comparacion: data.comparacion ?? null,
-            obligacion_grupo_id: it.obligacion_grupo_id ?? null,
-            obligacion_grupo_etiqueta: it.obligacion_grupo_etiqueta ?? null
-          }
-        };
-      });
-
-      if (payload.length > 0) {
-        const { error: insErr } = await supabase.from("propuestas_pendientes").insert(payload);
-        if (insErr) throw insErr;
-      }
-
-      await supabase.from("audit_log").insert({
-        accion: "SUBIR_PDF_NORMATIVA",
-        tabla: "normativa_docs",
-        registro_id: null,
-        valor_nuevo: {
-          negocio_id: negocioId,
-          storage_path: data.storage_path ?? null,
-          fuente_url: fuenteUrl,
-          file_name: file.name,
-          comparacion: data.comparacion
-        }
-      });
-
-      await loadNormativaDocs();
+      const data = parseIngestJson(rawText, res);
+      await applyIngestSuccess(data, file.name, "pdf_upload");
       return true;
     } catch (e: unknown) {
       setError(formatUiError(e));
@@ -288,7 +314,62 @@ export default function AiNotebookPage() {
     }
   }
 
-  // Subida 1x1 (reduce consumo y evita rate-limit por ráfaga).
+  async function procesarUrlsPdf() {
+    if (!negocioId) {
+      setError("Selecciona un negocio primero.");
+      return;
+    }
+    const lines = urlLines
+      .split(/\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (lines.length === 0) {
+      setError("Pega al menos una URL (enlace de archivo en Drive o PDF público), una por línea.");
+      return;
+    }
+    if (lines.length > 15) {
+      setError("Máximo 15 URLs por lote. Divide en varias ejecuciones.");
+      return;
+    }
+    setError(null);
+    setBusy(true);
+    setItems([]);
+    setComparacion(null);
+    setLastNormativaDocId(null);
+    const totalEst = estimateBatchSeconds(lines.length);
+    try {
+      if (!supabase) throw new Error("Falta configurar Supabase en .env.local");
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error("No autenticado");
+
+      for (let i = 0; i < lines.length; i++) {
+        const url = lines[i]!;
+        const remaining = lines.length - i;
+        setBusyMsg(
+          `URL ${i + 1}/${lines.length} · ~${SECONDS_PER_PDF_ESTIMATE}s este archivo · ~${estimateBatchSeconds(remaining)}s restantes (estimado)`
+        );
+        const res = await fetch("/api/pdfs/from-url", {
+          method: "POST",
+          credentials: "include",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ negocio_id: negocioId, url })
+        });
+        const rawText = await res.text();
+        const data = parseIngestJson(rawText, res);
+        const label = url.length > 72 ? `${url.slice(0, 70)}…` : url;
+        await applyIngestSuccess(data, label, "pdf_url");
+      }
+      setUrlLines("");
+      setMapMsg(`Listo: ${lines.length} PDF(s) desde URL indexados en la biblioteca y propuestas generadas.`);
+    } catch (e: unknown) {
+      setError(formatUiError(e));
+    } finally {
+      setBusy(false);
+      setBusyMsg(null);
+    }
+  }
+
+  // Subida secuencial (reduce rate-limit).
 
   async function eliminarSeleccionados() {
     if (!negocioId) return;
@@ -299,6 +380,7 @@ export default function AiNotebookPage() {
     try {
       const res = await fetch("/api/normativa/delete", {
         method: "POST",
+        credentials: "include",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ normativa_doc_ids: ids })
       });
@@ -444,23 +526,59 @@ export default function AiNotebookPage() {
               </div>
             </div>
           ) : (
-            <div className="mt-5">
-              <div className="text-sm font-medium">Subir PDF</div>
-              <div className="mt-2 text-xs text-charcoal/60">
-                Sube un PDF a la vez. Se indexa en memoria, se compara con cargas previas y se extraen requisitos hacia propuestas.
+            <div className="mt-5 space-y-4">
+              <div className="text-sm font-medium">Subir PDF desde tu equipo</div>
+              <div className="text-xs text-charcoal/60">
+                Puedes elegir <strong>uno o varios</strong> archivos (.pdf). Se procesan uno tras otro. Tiempo orientativo: ~{SECONDS_PER_PDF_ESTIMATE}s por
+                archivo (descarga, extracción e IA). La normativa queda en la <strong>biblioteca común</strong>; las propuestas se asocian al negocio activo.
               </div>
               <input
                 type="file"
                 accept="application/pdf"
+                multiple
                 disabled={busy || !supabase}
                 onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) void uploadPdf(f);
+                  const list = e.target.files;
+                  if (!list?.length) return;
+                  const files = [...list];
+                  void (async () => {
+                    for (let i = 0; i < files.length; i++) {
+                      const ok = await uploadPdf(files[i]!, { batch: { i, total: files.length } });
+                      if (!ok) break;
+                    }
+                  })();
                   e.currentTarget.value = "";
                 }}
-                className="mt-3 block w-full text-sm"
+                className="block w-full text-sm"
               />
-              {busy ? <div className="mt-3 text-sm text-charcoal/60">{busyMsg ?? "Procesando (PDF + IA)…"}</div> : null}
+
+              <div className="rounded-xl bg-cream px-3 py-3 ring-1 ring-borderSoft">
+                <div className="text-sm font-medium">Desde URL (Google Drive o PDF público)</div>
+                <div className="mt-1 text-xs text-charcoal/60">
+                  <strong>Carpetas de Drive:</strong> la app no puede abrir una carpeta entera. Abre la carpeta, comparte cada PDF (“Cualquiera con el enlace”)
+                  y pega aquí <strong>un enlace por línea</strong> (mismo lote que subir varios archivos). También sirven URLs directas a .pdf.
+                </div>
+                <textarea
+                  value={urlLines}
+                  onChange={(e) => setUrlLines(e.target.value)}
+                  disabled={busy || !supabase}
+                  placeholder={"https://drive.google.com/file/d/XXXX/view\nhttps://…otro.pdf"}
+                  className="mt-2 min-h-[88px] w-full rounded-lg bg-white px-3 py-2 text-xs ring-1 ring-borderSoft"
+                />
+                <div className="mt-2 text-[11px] text-charcoal/55">
+                  Estimación al pulsar el botón: ~{SECONDS_PER_PDF_ESTIMATE}s × número de líneas (solo referencia).
+                </div>
+                <button
+                  type="button"
+                  disabled={busy || !supabase || !negocioId}
+                  onClick={() => void procesarUrlsPdf()}
+                  className="mt-2 w-full rounded-xl bg-charcoal px-4 py-2 text-sm font-medium text-cream hover:bg-charcoal/90 disabled:opacity-50"
+                >
+                  {busy ? "Procesando URLs…" : "Descargar e indexar URLs"}
+                </button>
+              </div>
+
+              {busy ? <div className="text-sm text-charcoal/70">{busyMsg ?? "Procesando (PDF + IA)…"}</div> : null}
             </div>
           )}
 

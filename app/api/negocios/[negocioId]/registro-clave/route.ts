@@ -31,16 +31,26 @@ export async function POST(req: Request, ctx: RouteCtx) {
     return NextResponse.json({ error: "Solo admin/super_admin puede generar claves de registro" }, { status: 403 });
   }
 
-  const _body = BodySchema.safeParse(await req.json().catch(() => ({})));
+  void BodySchema.safeParse(await req.json().catch(() => ({})));
   const key = randomKey(10);
 
-  const admin = createSupabaseAdminClient();
-  const { error } = await admin
-    .from("negocios")
-    .update({ clave_registro: key })
-    .eq("id", negocioId);
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  try {
+    const admin = createSupabaseAdminClient();
+    const { error } = await admin.from("negocios").update({ clave_registro: key }).eq("id", negocioId);
+    if (error) throw error;
+  } catch {
+    const { error } = await supabase.from("negocios").update({ clave_registro: key }).eq("id", negocioId);
+    if (error) {
+      return NextResponse.json(
+        {
+          error:
+            error.message +
+            " Si persiste, ejecuta en Supabase la migración supabase-migration-negocio-clave-registro.sql y comprueba que tu usuario tenga acceso al negocio."
+        },
+        { status: 400 }
+      );
+    }
+  }
 
   return NextResponse.json({ ok: true, clave_registro: key });
 }
-
