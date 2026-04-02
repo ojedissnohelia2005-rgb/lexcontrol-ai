@@ -125,6 +125,13 @@ function extractMessage(e: unknown) {
   }
 }
 
+function normalizeForMatrixFilter(s: string) {
+  return s
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase();
+}
+
 export function BusinessMatrix({ negocioId }: { negocioId: string }) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [email, setEmail] = useState<string | null>(null);
@@ -143,6 +150,9 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
   const [qaPropuestaId, setQaPropuestaId] = useState<string | null>(null);
   const [fillingBlanks, setFillingBlanks] = useState(false);
   const [deletingRowId, setDeletingRowId] = useState<string | null>(null);
+  const [filterNorma, setFilterNorma] = useState("");
+  const [filterOrganismo, setFilterOrganismo] = useState("");
+  const [filterResponsables, setFilterResponsables] = useState("");
 
   const rowsRef = useRef<Row[]>([]);
   const rowEditBaseline = useRef<Map<string, Row>>(new Map());
@@ -162,6 +172,32 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
     for (const u of assignable) m.set(u.id, u);
     return m;
   }, [assignable]);
+
+  const filteredRows = useMemo(() => {
+    const n = normalizeForMatrixFilter(filterNorma.trim());
+    const o = normalizeForMatrixFilter(filterOrganismo.trim());
+    const resp = normalizeForMatrixFilter(filterResponsables.trim());
+    if (!n && !o && !resp) return rows;
+    return rows.filter((r) => {
+      if (n && !normalizeForMatrixFilter(r.norma_nombre ?? "").includes(n)) return false;
+      if (o && !normalizeForMatrixFilter(r.organismo_emisor ?? "").includes(o)) return false;
+      if (resp) {
+        const bloque = [
+          effectiveMatrizResponsableCompliance(r.responsable, r.supervisor_legal_id ?? null, assignableById),
+          displayGerenciaMatriz(r),
+          displayJefaturaMatriz(r),
+          r.sponsor ?? "",
+          r.responsable_proceso ?? ""
+        ].join(" ");
+        if (!normalizeForMatrixFilter(bloque).includes(resp)) return false;
+      }
+      return true;
+    });
+  }, [rows, filterNorma, filterOrganismo, filterResponsables, assignableById]);
+
+  const matrixFiltersActive = Boolean(
+    filterNorma.trim() || filterOrganismo.trim() || filterResponsables.trim()
+  );
 
   function storagePathFromEvidenceUrl(v: string | null | undefined) {
     if (!v) return null;
@@ -555,7 +591,13 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="text-xs text-charcoal/60">{loading ? "Cargando..." : `${rows.length} requisitos`}</div>
+            <div className="text-xs text-charcoal/60">
+              {loading
+                ? "Cargando..."
+                : matrixFiltersActive
+                  ? `${filteredRows.length} de ${rows.length} requisitos`
+                  : `${rows.length} requisitos`}
+            </div>
             {supabase ? (
               <>
                 <button
@@ -586,6 +628,53 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
           </div>
         </div>
 
+        <div className="mt-4 grid gap-3 rounded-xl bg-cream/50 p-3 ring-1 ring-borderSoft sm:grid-cols-2 lg:grid-cols-4">
+          <label className="block text-xs">
+            <span className="font-medium text-charcoal/80">Norma</span>
+            <input
+              className="mt-1 w-full rounded-lg bg-white px-2 py-1.5 text-xs ring-1 ring-borderSoft placeholder:text-charcoal/40"
+              placeholder="Contiene…"
+              value={filterNorma}
+              onChange={(e) => setFilterNorma(e.target.value)}
+              aria-label="Filtrar por norma"
+            />
+          </label>
+          <label className="block text-xs">
+            <span className="font-medium text-charcoal/80">Organismo</span>
+            <input
+              className="mt-1 w-full rounded-lg bg-white px-2 py-1.5 text-xs ring-1 ring-borderSoft placeholder:text-charcoal/40"
+              placeholder="Contiene…"
+              value={filterOrganismo}
+              onChange={(e) => setFilterOrganismo(e.target.value)}
+              aria-label="Filtrar por organismo emisor"
+            />
+          </label>
+          <label className="block text-xs sm:col-span-2 lg:col-span-1">
+            <span className="font-medium text-charcoal/80">Responsables</span>
+            <input
+              className="mt-1 w-full rounded-lg bg-white px-2 py-1.5 text-xs ring-1 ring-borderSoft placeholder:text-charcoal/40"
+              placeholder="Compliance, gerencia, jefatura…"
+              value={filterResponsables}
+              onChange={(e) => setFilterResponsables(e.target.value)}
+              aria-label="Filtrar por responsables"
+            />
+          </label>
+          <div className="flex items-end">
+            <button
+              type="button"
+              className="w-full rounded-lg border border-charcoal/15 bg-white px-3 py-1.5 text-xs font-medium text-charcoal hover:bg-cream disabled:opacity-40"
+              disabled={!matrixFiltersActive}
+              onClick={() => {
+                setFilterNorma("");
+                setFilterOrganismo("");
+                setFilterResponsables("");
+              }}
+            >
+              Limpiar filtros
+            </button>
+          </div>
+        </div>
+
         <div className="mt-4 overflow-x-auto rounded-2xl bg-cream/40 ring-1 ring-borderSoft">
           <table className="w-full text-left text-sm">
             <thead className="bg-cream/80">
@@ -610,7 +699,14 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {!loading && rows.length > 0 && filteredRows.length === 0 ? (
+                <tr>
+                  <td colSpan={17} className="px-4 py-8 text-center text-sm text-charcoal/60">
+                    Ninguna fila coincide con los filtros. Ajusta o limpia los criterios.
+                  </td>
+                </tr>
+              ) : null}
+              {filteredRows.map((r) => (
                 <tr key={r.id} className="border-t border-borderSoft align-top">
                   <td className="px-4 py-3 min-w-[140px]">
                     <input
