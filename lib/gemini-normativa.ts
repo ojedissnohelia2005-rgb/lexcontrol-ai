@@ -158,6 +158,31 @@ export async function extractNormativaMetaGemini(input: { file_name: string; tex
   }
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** La IA suele mandar "1" o "[1]" en vez del uuid que figura como id= en el bloque. */
+function normalizeDocCoincidenteId(
+  raw: unknown,
+  existentes: readonly { id: string }[]
+): string | null {
+  if (existentes.length === 0) return null;
+  const ids = new Set(existentes.map((e) => e.id));
+  let t: string | null = null;
+  if (raw == null) return null;
+  if (typeof raw === "number" && Number.isFinite(raw)) t = String(Math.trunc(raw));
+  else if (typeof raw === "string") t = raw.trim() || null;
+  if (!t) return null;
+  if (UUID_RE.test(t) && ids.has(t)) return t;
+  const bracket = /^\[?(\d+)\]?$/.exec(t);
+  if (bracket) {
+    const n = parseInt(bracket[1], 10);
+    if (n >= 1 && n <= existentes.length) return existentes[n - 1]!.id;
+  }
+  const embedded = t.match(/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i);
+  if (embedded?.[0] && ids.has(embedded[0])) return embedded[0];
+  return null;
+}
+
 export async function compareNormativaWithGemini(input: {
   titulo_nuevo: string;
   texto_nuevo: string;
@@ -186,7 +211,7 @@ export async function compareNormativaWithGemini(input: {
     "Responde SOLO JSON:",
     '{"relacion":"INDEPENDIENTE"|"MISMA_NORMA"|"ACTUALIZACION","doc_coincidente_id":string|null,"nueva_es_mas_reciente":boolean|null,"confianza":0-1,"razon":"breve"}',
     "INDEPENDIENTE: normas distintas. MISMA_NORMA: mismo título/reglamento esencialmente (duplicado o reforma menor). ACTUALIZACION: reemplaza/deroga/actualiza explícitamente una existente.",
-    "doc_coincidente_id debe ser exactamente el id del bloque entre corchetes si aplica; si no, null.",
+    "doc_coincidente_id: el UUID completo que aparece en cada línea como id=xxxxxxxx (36 caracteres con guiones). No uses solo el número del índice [1] ni el título.",
     "nueva_es_mas_reciente: true si por fechas o metadatos el NUEVO es posterior; false si el existente es más reciente; null si no claro.",
     "",
     `NUEVO titulo=${input.titulo_nuevo} sha256=${input.sha256_nuevo}`,
@@ -235,9 +260,10 @@ export async function compareNormativaWithGemini(input: {
     const rel = p.relacion ?? "INDEPENDIENTE";
     const relacion =
       rel === "MISMA_NORMA" || rel === "ACTUALIZACION" || rel === "INDEPENDIENTE" ? rel : "INDEPENDIENTE";
+    const docId = normalizeDocCoincidenteId(p.doc_coincidente_id, input.existentes);
     return {
       relacion,
-      doc_coincidente_id: typeof p.doc_coincidente_id === "string" ? p.doc_coincidente_id : null,
+      doc_coincidente_id: docId,
       nueva_es_mas_reciente: typeof p.nueva_es_mas_reciente === "boolean" ? p.nueva_es_mas_reciente : null,
       confianza: typeof p.confianza === "number" ? p.confianza : 0,
       razon: typeof p.razon === "string" ? p.razon : ""

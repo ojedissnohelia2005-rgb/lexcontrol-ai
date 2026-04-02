@@ -18,7 +18,18 @@ export async function POST(req: Request) {
     const { data: userData } = await supabase.auth.getUser();
     if (!userData.user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
 
-    const body = BodySchema.parse(await req.json());
+    const raw = await req.json();
+    const parsed = BodySchema.safeParse(raw);
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          error:
+            "Identificadores de documento inválidos. Vuelve a subir el PDF para repetir el análisis de versión (la IA a veces devolvía un índice en lugar del UUID; ya está corregido en el servidor)."
+        },
+        { status: 400 }
+      );
+    }
+    const body = parsed.data;
 
     const { data: nuevo, error: nErr } = await supabase
       .from("normativa_docs")
