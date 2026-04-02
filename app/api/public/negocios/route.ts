@@ -1,14 +1,13 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
-// Negocios disponibles para registro (tienen clave_registro activa).
+// Negocios disponibles para registro. Se listan todos para que el admin pueda gestionar acceso por clave.
 export async function GET() {
   try {
     const admin = createSupabaseAdminClient();
     const { data, error } = await admin
       .from("negocios")
       .select("id,nombre")
-      .not("clave_registro", "is", null)
       .order("created_at", { ascending: false });
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
     return NextResponse.json({ negocios: data ?? [] });
