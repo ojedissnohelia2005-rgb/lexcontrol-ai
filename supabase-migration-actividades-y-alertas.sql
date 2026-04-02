@@ -1,6 +1,8 @@
 -- Ejecutar en Supabase SQL Editor
 -- 1) Actividades específicas por negocio
 -- 2) Alertas de posible actualización de normativa (vigilancia legal)
+--
+-- Nota: PostgreSQL NO acepta "CREATE POLICY IF NOT EXISTS". Se usa DROP + CREATE.
 
 create table if not exists public.negocio_actividades (
   id uuid primary key default gen_random_uuid(),
@@ -12,16 +14,20 @@ create table if not exists public.negocio_actividades (
 
 alter table public.negocio_actividades enable row level security;
 
-create policy if not exists "actividades_select" on public.negocio_actividades
+drop policy if exists "actividades_select" on public.negocio_actividades;
+create policy "actividades_select" on public.negocio_actividades
 for select using (public.has_negocio_access(negocio_id));
 
-create policy if not exists "actividades_insert" on public.negocio_actividades
+drop policy if exists "actividades_insert" on public.negocio_actividades;
+create policy "actividades_insert" on public.negocio_actividades
 for insert with check (public.has_negocio_access(negocio_id));
 
-create policy if not exists "actividades_update" on public.negocio_actividades
+drop policy if exists "actividades_update" on public.negocio_actividades;
+create policy "actividades_update" on public.negocio_actividades
 for update using (public.has_negocio_access(negocio_id));
 
-create policy if not exists "actividades_delete" on public.negocio_actividades
+drop policy if exists "actividades_delete" on public.negocio_actividades;
+create policy "actividades_delete" on public.negocio_actividades
 for delete using (public.has_negocio_access(negocio_id));
 
 alter table public.matriz_cumplimiento
@@ -43,7 +49,8 @@ create table if not exists public.alertas_actualizacion_normativa (
 
 alter table public.alertas_actualizacion_normativa enable row level security;
 
-create policy if not exists "alertas_act_select" on public.alertas_actualizacion_normativa
+drop policy if exists "alertas_act_select" on public.alertas_actualizacion_normativa;
+create policy "alertas_act_select" on public.alertas_actualizacion_normativa
 for select using (
   public.is_super_admin()
   or exists (
@@ -54,6 +61,6 @@ for select using (
   )
 );
 
-create policy if not exists "alertas_act_insert" on public.alertas_actualizacion_normativa
+drop policy if exists "alertas_act_insert" on public.alertas_actualizacion_normativa;
+create policy "alertas_act_insert" on public.alertas_actualizacion_normativa
 for insert with check (auth.role() = 'authenticated');
-
