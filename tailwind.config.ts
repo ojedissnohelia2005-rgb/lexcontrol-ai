@@ -10,6 +10,8 @@ const config: Config = {
         roseOld: "#D4A5A5",
         charcoal: "#333333",
         sidebarRose: "#8E6B6B",
+        /** Barra inferior: café oscuro para leer bien texto claro */
+        coffeeNav: "#5D4037",
         borderSoft: "rgba(51, 51, 51, 0.08)"
       },
       boxShadow: {

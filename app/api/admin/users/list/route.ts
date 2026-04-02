@@ -12,7 +12,16 @@ export async function GET() {
     const ok = await isSuperAdminSession(supabase as any, userData.user.id, userData.user.email);
     if (!ok) return NextResponse.json({ error: "Solo Super Admin" }, { status: 403 });
 
-    const admin = createSupabaseAdminClient();
+    let admin: ReturnType<typeof createSupabaseAdminClient>;
+    try {
+      admin = createSupabaseAdminClient();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Sin cliente admin";
+      return NextResponse.json(
+        { error: `${msg}. Añade SUPABASE_SERVICE_ROLE_KEY en Vercel (Environment Variables).` },
+        { status: 503 }
+      );
+    }
     const { data, error } = await admin
       .from("profiles")
       .select("id,email,nombre,rol,created_at")

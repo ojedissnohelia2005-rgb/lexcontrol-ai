@@ -56,7 +56,7 @@ export function BottomNav() {
   const showTransparencia = isSuperAdminEmail(email);
 
   return (
-    <nav className="sticky bottom-0 z-30 border-t border-borderSoft bg-sidebarRose/98 px-4 py-2 text-xs text-cream shadow-[0_-4px_12px_rgba(0,0,0,0.12)]">
+    <nav className="sticky bottom-0 z-30 border-t border-white/15 bg-coffeeNav px-4 py-2 text-xs text-white shadow-[0_-4px_16px_rgba(0,0,0,0.2)]">
       <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-2">
         <div className="flex flex-1 items-center justify-around gap-1">
           {items.map(({ href, label, Icon }) => {
@@ -68,9 +68,9 @@ export function BottomNav() {
                 href={href}
                 className={cn(
                   "flex flex-col items-center rounded-xl px-2 py-1.5 transition",
-                  active && "bg-cream/20 text-cream shadow-sm",
-                  !active && "text-cream/80 hover:text-cream hover:bg-cream/10",
-                  isNotif && hasUnread && !active && "bg-red-500/70 text-white"
+                  active && "bg-white/20 text-white shadow-sm",
+                  !active && "text-white/85 hover:bg-white/10 hover:text-white",
+                  isNotif && hasUnread && !active && "bg-red-600/90 text-white"
                 )}
               >
                 <Icon className="h-4 w-4" />
@@ -84,7 +84,7 @@ export function BottomNav() {
               href="/transparencia"
               className={cn(
                 "flex flex-col items-center rounded-xl px-2 py-1.5 text-[10px] transition",
-                pathname?.startsWith("/transparencia") ? "bg-cream/20 text-cream shadow-sm" : "text-cream/80 hover:text-cream hover:bg-cream/10"
+                pathname?.startsWith("/transparencia") ? "bg-white/20 text-white shadow-sm" : "text-white/85 hover:bg-white/10 hover:text-white"
               )}
             >
               <IconShield className="h-4 w-4" />

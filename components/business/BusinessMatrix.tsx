@@ -102,6 +102,7 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
   const [rows, setRows] = useState<Row[]>([]);
   const [propuestas, setPropuestas] = useState<Propuesta[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [matrixIaNotice, setMatrixIaNotice] = useState<string | null>(null);
   const [iaPanel, setIaPanel] = useState<{ propuestaId: string; titulo: string; texto: string } | null>(null);
   const [iaBusy, setIaBusy] = useState<string | null>(null);
   const [qaPregunta, setQaPregunta] = useState("");
@@ -257,6 +258,7 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
 
   async function fillMatrixBlanks() {
     setError(null);
+    setMatrixIaNotice(null);
     setFillingBlanks(true);
     try {
       const res = await fetch("/api/matriz/fill-blanks", {
@@ -264,12 +266,20 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ negocio_id: negocioId, max_rows: 25 })
       });
-      const data = (await res.json()) as { ok?: boolean; updated?: number; notes?: string[]; error?: string };
+      const data = (await res.json()) as {
+        ok?: boolean;
+        updated?: number;
+        notes?: string[];
+        error?: string;
+        sin_normativa_aviso?: string;
+      };
       if (!res.ok || data.error) throw new Error(data.error ?? "No se pudo completar con IA");
+      if (data.sin_normativa_aviso) setMatrixIaNotice(data.sin_normativa_aviso);
       const extra = (data.notes ?? []).filter(Boolean).length ? ` · ${(data.notes ?? []).slice(0, 3).join(" | ")}` : "";
-      if ((data.updated ?? 0) === 0 && !extra) {
+      if ((data.updated ?? 0) === 0 && !data.sin_normativa_aviso && !extra) {
         setError("No había filas con campos vacíos o la IA no devolvió datos.");
       }
+      if ((data.updated ?? 0) > 0) setError(null);
       await loadAll();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Error IA");
@@ -380,6 +390,9 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
   return (
     <div className="space-y-6">
       {error ? <div className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-200">{error}</div> : null}
+      {matrixIaNotice ? (
+        <div className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-950 ring-1 ring-amber-200">{matrixIaNotice}</div>
+      ) : null}
       {!supabase ? (
         <div className="rounded-2xl bg-white p-6 shadow-card ring-1 ring-borderSoft">
           <div className="text-sm font-medium">Configura Supabase</div>

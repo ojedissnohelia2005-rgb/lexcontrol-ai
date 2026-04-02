@@ -34,6 +34,7 @@ export default function TransparenciaPage() {
   const [error, setError] = useState<string | null>(null);
   const [users, setUsers] = useState<Array<{ id: string; email: string | null; nombre: string | null; rol: string; created_at: string }>>([]);
   const [roleBusyId, setRoleBusyId] = useState<string | null>(null);
+  const [roleMsg, setRoleMsg] = useState<string | null>(null);
 
   const [negocios, setNegocios] = useState<NegocioMini[]>([]);
   const [negocioAuditId, setNegocioAuditId] = useState<string>("");
@@ -76,27 +77,44 @@ export default function TransparenciaPage() {
     if (!supabase) return;
     if (!email || !isSuperAdminEmail(email)) return;
     // Lista de usuarios recientes (la policy de profiles solo deja ver propio, así que esto requiere service role vía endpoint)
-    fetch("/api/admin/users/list")
-      .then((r) => r.json())
-      .then((d: { users?: Array<{ id: string; email: string | null; nombre: string | null; rol: string; created_at: string }>; error?: string }) => {
-        if (d.error) throw new Error(d.error);
+    fetch("/api/admin/users/list", { credentials: "same-origin" })
+      .then(async (r) => {
+        const d = (await r.json()) as {
+          users?: Array<{ id: string; email: string | null; nombre: string | null; rol: string; created_at: string }>;
+          error?: string;
+        };
+        if (!r.ok || d.error) throw new Error(d.error ?? `HTTP ${r.status}`);
         setUsers(d.users ?? []);
       })
-      .catch(() => setUsers([]));
+      .catch((e: unknown) => {
+        setError(e instanceof Error ? e.message : "No se pudieron cargar usuarios");
+        setUsers([]);
+      });
   }, [supabase, email]);
 
   async function setRole(userId: string, rol: "user" | "admin") {
     setError(null);
+    setRoleMsg(null);
     setRoleBusyId(userId);
     try {
       const res = await fetch("/api/admin/users/set-role", {
         method: "POST",
+        credentials: "same-origin",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ user_id: userId, rol })
       });
-      const data = (await res.json()) as { ok?: boolean; error?: string };
-      if (!res.ok || data.error) throw new Error(data.error ?? "No se pudo actualizar rol");
+      let data: { ok?: boolean; error?: string };
+      try {
+        data = (await res.json()) as { ok?: boolean; error?: string };
+      } catch {
+        throw new Error(`Respuesta inválida del servidor (${res.status}). ¿Falta SUPABASE_SERVICE_ROLE_KEY en Vercel?`);
+      }
+      if (!res.ok || data.error) {
+        throw new Error(data.error ?? `No se pudo actualizar rol (${res.status})`);
+      }
       setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, rol } : u)));
+      setRoleMsg(rol === "admin" ? "Usuario promovido a admin." : "Usuario degradado a rol estándar.");
+      window.setTimeout(() => setRoleMsg(null), 5000);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Error");
     } finally {
@@ -201,6 +219,7 @@ export default function TransparenciaPage() {
       {isSA ? (
         <div className="mt-6 space-y-6">
           {error ? <div className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-200">{error}</div> : null}
+          {roleMsg ? <div className="rounded-xl bg-green-50 px-3 py-2 text-sm text-green-800 ring-1 ring-green-200">{roleMsg}</div> : null}
 
           <div className="rounded-2xl bg-white p-6 shadow-card ring-1 ring-borderSoft">
             <div className="flex items-center justify-between">
@@ -280,25 +299,24 @@ export default function TransparenciaPage() {
                       <td className="px-4 py-3">
                         {u.rol === "super_admin" ? (
                           <span className="text-xs text-charcoal/60">—</span>
+                        ) : u.rol === "admin" ? (
+                          <button
+                            type="button"
+                            disabled={roleBusyId === u.id}
+                            className="rounded-xl border border-charcoal/15 bg-white px-3 py-2 text-xs font-medium text-charcoal shadow-sm hover:bg-cream disabled:opacity-50"
+                            onClick={() => void setRole(u.id, "user")}
+                          >
+                            {roleBusyId === u.id ? "…" : "Degradar a usuario"}
+                          </button>
                         ) : (
-                          <div className="flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              disabled={roleBusyId === u.id}
-                              className="rounded-xl bg-white px-3 py-2 text-xs ring-1 ring-borderSoft hover:bg-cream/70 disabled:opacity-50"
-                              onClick={() => void setRole(u.id, "user")}
-                            >
-                              Usuario
-                            </button>
-                            <button
-                              type="button"
-                              disabled={roleBusyId === u.id}
-                              className="rounded-xl bg-sidebarRose px-3 py-2 text-xs font-medium text-cream hover:opacity-90 disabled:opacity-50"
-                              onClick={() => void setRole(u.id, "admin")}
-                            >
-                              {roleBusyId === u.id ? "..." : "Promover a admin"}
-                            </button>
-                          </div>
+                          <button
+                            type="button"
+                            disabled={roleBusyId === u.id}
+                            className="rounded-xl bg-charcoal px-3 py-2 text-xs font-medium text-cream shadow-sm hover:bg-charcoal/90 disabled:opacity-50"
+                            onClick={() => void setRole(u.id, "admin")}
+                          >
+                            {roleBusyId === u.id ? "…" : "Promover a admin"}
+                          </button>
                         )}
                       </td>
                     </tr>

@@ -19,7 +19,18 @@ export async function POST(req: Request) {
     if (!ok) return NextResponse.json({ error: "Solo Super Admin" }, { status: 403 });
 
     const body = BodySchema.parse(await req.json());
-    const admin = createSupabaseAdminClient();
+
+    let admin: ReturnType<typeof createSupabaseAdminClient>;
+    try {
+      admin = createSupabaseAdminClient();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Sin cliente admin";
+      return NextResponse.json(
+        { error: `${msg}. Configura SUPABASE_SERVICE_ROLE_KEY en el entorno (Vercel / .env.local).` },
+        { status: 503 }
+      );
+    }
+
     const { error } = await admin.from("profiles").update({ rol: body.rol }).eq("id", body.user_id);
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 

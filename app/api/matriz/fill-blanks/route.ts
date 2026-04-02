@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { generateAiText } from "@/lib/ai";
 import { classifyPrioridad, computePriorityScore, estimateUsdFromSanction } from "@/lib/finance";
+import { MENSAJE_SIN_NORMATIVA_EN_BASE } from "@/lib/matrix-ai-messages";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const BodySchema = z.object({
@@ -88,6 +89,7 @@ export async function POST(req: Request) {
     const list = (rows ?? []) as Record<string, unknown>[];
     let updated = 0;
     const notes: string[] = [];
+    let anySinNormativa = false;
 
     for (const row of list) {
       const id = String(row.id);
@@ -153,20 +155,30 @@ export async function POST(req: Request) {
 
       const prompt = [
         "Eres analista de cumplimiento normativo en Ecuador (2026).",
-        "Tienes una FILA de matriz (JSON) y el contexto del negocio. Hay extracto normativo opcional.",
-        "Devuelve SOLO un objeto JSON (sin markdown) con claves entre las que falten datos.",
-        `Solo incluye claves de esta lista cuando puedas inferir un valor razonable desde la norma o el requisito: ${emptyFields.join(", ")}.`,
+        "Tienes una FILA de matriz (JSON) y el contexto del negocio. Hay extracto normativo opcional proveniente de normativa cargada en la base de datos.",
+        "",
+        "Obligatorio — doble verificación antes de responder:",
+        "1) Primera revisión: ¿puedes completar algún campo vacío con fundamento claro en el extracto normativo y/o en los datos ya presentes en la fila (artículo, requisito, sanción), sin inventar normas ni hechos?",
+        "2) Segunda revisión: vuelve a comprobar lo mismo. Si tras ambas revisiones no hay fundamento suficiente, NO rellenes campos con suposiciones.",
+        "",
+        "Si tras esas dos revisiones no puedes completar ninguno de los campos solicitados por falta de normativa/texto útil en base de datos o por ambigüedad que exija nueva normativa:",
+        'Responde ÚNICAMENTE con este JSON (exactamente una clave, sin otros campos): {"sin_normativa_en_base":true}',
+        "",
+        "Si sí puedes completar algún campo vacío:",
+        "Devuelve SOLO un objeto JSON (sin markdown) incluyendo únicamente claves de la lista que falten y tengas fundamento para llenar.",
+        `Lista de campos candidatos (vacíos ahora): ${emptyFields.join(", ")}.`,
         "No repitas textos largos si ya existen en articulo/requisito; para vacíos inferidos usa formulación clara y breve.",
         "fecha_publicacion en formato YYYY-MM-DD si aplica.",
         "impacto_economico: entero 1-10; probabilidad_incumplimiento: entero 1-5; multa_estimada_usd: número en USD si hay base (si no, omite).",
         "prioridad solo si está vacía: uno de critico | alto | medio | bajo según gravedad.",
         "No inventes URLs: link_fuente_oficial y fuente_verificada_url solo si aparecen en el extracto normativo.",
+        "No devuelvas un objeto vacío {}. Si no aportas ningún campo, usa sin_normativa_en_base como arriba.",
         "",
         "### Contexto negocio\n" + negocioCtx,
         "",
         "### Fila (campos clave)\n" + rowJson,
         "",
-        "### Extracto normativa (opcional)\n" + (normativaExcerpt || "(sin documento vinculado; infiere solo desde requisito/sanción/negocio)"),
+        "### Extracto normativa (opcional)\n" + (normativaExcerpt || "(sin documento vinculado en base; no inventes normas — si no alcanza, sin_normativa_en_base)"),
         "",
         "Responde únicamente con el JSON objeto."
       ].join("\n");
@@ -184,6 +196,13 @@ export async function POST(req: Request) {
         parsedRaw = parseAiJson(raw);
       } catch {
         notes.push(`${id}: JSON inválido de la IA`);
+        continue;
+      }
+
+      const rawObj = parsedRaw && typeof parsedRaw === "object" && !Array.isArray(parsedRaw) ? (parsedRaw as Record<string, unknown>) : null;
+      if (rawObj?.sin_normativa_en_base === true || rawObj?.sin_normativa_en_base === "true") {
+        anySinNormativa = true;
+        notes.push(`${id}: sin normativa en base (IA)`);
         continue;
       }
 
@@ -254,7 +273,8 @@ export async function POST(req: Request) {
       }
 
       if (Object.keys(patch).length === 0) {
-        notes.push(`${id}: IA no sugirió valores`);
+        anySinNormativa = true;
+        notes.push(`${id}: sin completar (sin fundamento / sin normativa)`);
         continue;
       }
 
@@ -266,7 +286,13 @@ export async function POST(req: Request) {
       updated += 1;
     }
 
-    return NextResponse.json({ ok: true, updated, processed: list.length, notes });
+    return NextResponse.json({
+      ok: true,
+      updated,
+      processed: list.length,
+      notes,
+      sin_normativa_aviso: anySinNormativa ? MENSAJE_SIN_NORMATIVA_EN_BASE : undefined
+    });
   } catch (e: unknown) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Error" }, { status: 400 });
   }
