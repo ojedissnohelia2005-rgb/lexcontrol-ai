@@ -27,6 +27,8 @@ type Row = {
   evidencia_url: string | null;
   link_fuente_oficial: string | null;
   fuente_verificada_url: string | null;
+  impacto_economico?: number | null;
+  probabilidad_incumplimiento?: number | null;
   gerencia_competente?: string | null;
   area_competente?: string | null;
   normativa_doc_id?: string | null;
@@ -104,10 +106,13 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
   const [iaBusy, setIaBusy] = useState<string | null>(null);
   const [qaPregunta, setQaPregunta] = useState("");
   const [qaPropuestaId, setQaPropuestaId] = useState<string | null>(null);
+  const [fillingBlanks, setFillingBlanks] = useState(false);
+  const [deletingRowId, setDeletingRowId] = useState<string | null>(null);
 
   const canApprove = isSuperAdminEmail(email);
-  const canEditResponsable = currentRole === "admin" || currentRole === "super_admin";
-  const canDeleteFiles = canEditResponsable;
+  const canEditMatrix = Boolean(currentUserId && supabase);
+  const canAdminMatrix = currentRole === "admin" || currentRole === "super_admin";
+  const canDeleteFiles = canAdminMatrix;
 
   function storagePathFromEvidenceUrl(v: string | null | undefined) {
     if (!v) return null;
@@ -128,7 +133,7 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
         supabase
           .from("matriz_cumplimiento")
           .select(
-            "id,estado,tipo_norma,norma_nombre,fecha_publicacion,organismo_emisor,resumen_experto,campo_juridico,observaciones,proceso_actividad_relacionada,sponsor,responsable_proceso,articulo,requisito,sancion,multa_estimada_usd,responsable,prioridad,evidencia_url,link_fuente_oficial,fuente_verificada_url,gerencia_competente,area_competente,normativa_doc_id,created_at"
+            "id,estado,tipo_norma,norma_nombre,fecha_publicacion,organismo_emisor,resumen_experto,campo_juridico,observaciones,proceso_actividad_relacionada,sponsor,responsable_proceso,articulo,requisito,sancion,multa_estimada_usd,impacto_economico,probabilidad_incumplimiento,responsable,prioridad,evidencia_url,link_fuente_oficial,fuente_verificada_url,gerencia_competente,area_competente,normativa_doc_id,created_at"
           )
           .eq("negocio_id", negocioId)
           .order("created_at", { ascending: false }),
@@ -250,6 +255,46 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
     if (e) setError(e.message);
   }
 
+  async function fillMatrixBlanks() {
+    setError(null);
+    setFillingBlanks(true);
+    try {
+      const res = await fetch("/api/matriz/fill-blanks", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ negocio_id: negocioId, max_rows: 25 })
+      });
+      const data = (await res.json()) as { ok?: boolean; updated?: number; notes?: string[]; error?: string };
+      if (!res.ok || data.error) throw new Error(data.error ?? "No se pudo completar con IA");
+      const extra = (data.notes ?? []).filter(Boolean).length ? ` · ${(data.notes ?? []).slice(0, 3).join(" | ")}` : "";
+      if ((data.updated ?? 0) === 0 && !extra) {
+        setError("No había filas con campos vacíos o la IA no devolvió datos.");
+      }
+      await loadAll();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Error IA");
+    } finally {
+      setFillingBlanks(false);
+    }
+  }
+
+  async function deleteMatrixRow(rowId: string) {
+    if (!supabase || !canAdminMatrix) return;
+    const ok = window.confirm("¿Eliminar esta fila de la matriz? No se puede deshacer.");
+    if (!ok) return;
+    setDeletingRowId(rowId);
+    setError(null);
+    try {
+      const { error: e } = await supabase.from("matriz_cumplimiento").delete().eq("id", rowId);
+      if (e) throw e;
+      await loadAll();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "No se pudo eliminar la fila");
+    } finally {
+      setDeletingRowId(null);
+    }
+  }
+
   async function deleteEvidenceFile(rowId: string, evidenceUrl: string | null) {
     const path = storagePathFromEvidenceUrl(evidenceUrl);
     if (!path) {
@@ -349,22 +394,30 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
           <div>
             <div className="text-sm font-medium">Matriz de Cumplimiento</div>
             <div className="mt-1 text-xs text-charcoal/60">
-              Estado, sanciones y evidencia. Se actualiza en tiempo real.
+              Todos los usuarios con acceso pueden editar celdas. Admin/super admin pueden eliminar filas y archivos. Usa IA para completar campos vacíos.
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="text-xs text-charcoal/60">{loading ? "Cargando..." : `${rows.length} requisitos`}</div>
             {supabase ? (
               <>
+                <button
+                  type="button"
+                  disabled={fillingBlanks || !canEditMatrix}
+                  className="rounded-xl bg-charcoal px-3 py-2 text-xs font-medium text-cream shadow-sm hover:bg-charcoal/90 disabled:opacity-50"
+                  onClick={() => void fillMatrixBlanks()}
+                >
+                  {fillingBlanks ? "IA trabajando…" : "Completar vacíos (IA)"}
+                </button>
                 <a
-                  className="rounded-xl bg-cream px-3 py-2 text-xs font-medium ring-1 ring-borderSoft hover:bg-cream/70"
+                  className="rounded-xl border border-charcoal/15 bg-white px-3 py-2 text-xs font-medium text-charcoal shadow-sm hover:bg-cream"
                   href={`/api/export/matriz?negocio_id=${negocioId}`}
                   download
                 >
                   Excel (CSV)
                 </a>
                 <a
-                  className="rounded-xl bg-cream px-3 py-2 text-xs font-medium ring-1 ring-borderSoft hover:bg-cream/70"
+                  className="rounded-xl border border-charcoal/15 bg-white px-3 py-2 text-xs font-medium text-charcoal shadow-sm hover:bg-cream"
                   href={`/api/export/matriz/pdf?negocio_id=${negocioId}`}
                   target="_blank"
                   rel="noreferrer"
@@ -398,6 +451,7 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
                 <th className="px-4 py-3">Documentación</th>
                 <th className="px-4 py-3">Responsable</th>
                 <th className="px-4 py-3">Prioridad</th>
+                <th className="px-4 py-3">Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -408,7 +462,7 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
                       className="w-[140px] rounded-xl bg-cream px-3 py-2 text-xs ring-1 ring-borderSoft"
                       placeholder="Ley/Regl./Res."
                       value={r.tipo_norma ?? ""}
-                      disabled={!canEditResponsable}
+                      disabled={!canEditMatrix}
                       onChange={(e) => void updateRow(r.id, { tipo_norma: e.target.value || null } as any)}
                     />
                   </td>
@@ -417,7 +471,7 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
                       className="w-[220px] rounded-xl bg-cream px-3 py-2 text-xs ring-1 ring-borderSoft"
                       placeholder="Nombre de la norma"
                       value={r.norma_nombre ?? ""}
-                      disabled={!canEditResponsable}
+                      disabled={!canEditMatrix}
                       onChange={(e) => void updateRow(r.id, { norma_nombre: e.target.value || null } as any)}
                     />
                   </td>
@@ -426,7 +480,7 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
                       className="w-[120px] rounded-xl bg-cream px-3 py-2 text-xs ring-1 ring-borderSoft"
                       placeholder="YYYY-MM-DD"
                       value={r.fecha_publicacion ?? ""}
-                      disabled={!canEditResponsable}
+                      disabled={!canEditMatrix}
                       onChange={(e) => void updateRow(r.id, { fecha_publicacion: e.target.value || null } as any)}
                     />
                   </td>
@@ -435,7 +489,7 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
                       className="w-[180px] rounded-xl bg-cream px-3 py-2 text-xs ring-1 ring-borderSoft"
                       placeholder="Organismo emisor"
                       value={r.organismo_emisor ?? ""}
-                      disabled={!canEditResponsable}
+                      disabled={!canEditMatrix}
                       onChange={(e) => void updateRow(r.id, { organismo_emisor: e.target.value || null } as any)}
                     />
                   </td>
@@ -443,6 +497,7 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
                     <select
                       className="rounded-xl bg-cream px-2 py-1 text-xs ring-1 ring-borderSoft"
                       value={r.estado}
+                      disabled={!canEditMatrix}
                       onChange={(e) => void updateRow(r.id, { estado: e.target.value as Row["estado"] })}
                     >
                       <option value="cumplido">cumplido</option>
@@ -454,13 +509,29 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
                       <span className={`inline-flex rounded-full px-2 py-1 text-[11px] ring-1 ${badgeEstado(r.estado)}`}>{r.estado}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap">{r.articulo}</td>
-                  <td className="px-4 py-3 min-w-[280px]">{r.requisito}</td>
+                  <td className="px-4 py-3 min-w-[120px]">
+                    <input
+                      className="w-[120px] rounded-xl bg-cream px-3 py-2 text-xs ring-1 ring-borderSoft"
+                      value={r.articulo}
+                      disabled={!canEditMatrix}
+                      onChange={(e) => void updateRow(r.id, { articulo: e.target.value })}
+                      placeholder="Art."
+                    />
+                  </td>
+                  <td className="px-4 py-3 min-w-[280px]">
+                    <textarea
+                      className="min-h-[72px] w-[280px] rounded-xl bg-cream px-3 py-2 text-xs ring-1 ring-borderSoft"
+                      value={r.requisito}
+                      disabled={!canEditMatrix}
+                      onChange={(e) => void updateRow(r.id, { requisito: e.target.value })}
+                      placeholder="Requisito"
+                    />
+                  </td>
                   <td className="px-4 py-3 min-w-[240px]">
                     <textarea
                       className="min-h-[64px] w-[240px] rounded-xl bg-cream px-3 py-2 text-xs ring-1 ring-borderSoft"
                       value={r.resumen_experto ?? ""}
-                      disabled={!canEditResponsable}
+                      disabled={!canEditMatrix}
                       onChange={(e) => void updateRow(r.id, { resumen_experto: e.target.value || null } as any)}
                       placeholder="Resumen ejecutivo"
                     />
@@ -469,7 +540,7 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
                     <input
                       className="w-[160px] rounded-xl bg-cream px-3 py-2 text-xs ring-1 ring-borderSoft"
                       value={r.campo_juridico ?? ""}
-                      disabled={!canEditResponsable}
+                      disabled={!canEditMatrix}
                       onChange={(e) => void updateRow(r.id, { campo_juridico: e.target.value || null } as any)}
                       placeholder="Tributario/Ambiental..."
                     />
@@ -478,27 +549,44 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
                     <textarea
                       className="min-h-[64px] w-[240px] rounded-xl bg-cream px-3 py-2 text-xs ring-1 ring-borderSoft"
                       value={r.observaciones ?? ""}
-                      disabled={!canEditResponsable}
+                      disabled={!canEditMatrix}
                       onChange={(e) => void updateRow(r.id, { observaciones: e.target.value || null } as any)}
                       placeholder="Observaciones"
                     />
                   </td>
-                  <td className="px-4 py-3 min-w-[240px]">{r.sancion ?? "—"}</td>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    {r.multa_estimada_usd ?? estimateUsdFromSanction(r.sancion) ?? null ? (
-                      <span>
-                        $
-                        {Number(r.multa_estimada_usd ?? estimateUsdFromSanction(r.sancion) ?? 0).toLocaleString()}
-                      </span>
-                    ) : (
-                      "—"
-                    )}
+                  <td className="px-4 py-3 min-w-[200px]">
+                    <textarea
+                      className="min-h-[64px] w-[200px] rounded-xl bg-cream px-3 py-2 text-xs ring-1 ring-borderSoft"
+                      value={r.sancion ?? ""}
+                      disabled={!canEditMatrix}
+                      onChange={(e) => void updateRow(r.id, { sancion: e.target.value || null })}
+                      placeholder="Texto de sanción"
+                    />
+                  </td>
+                  <td className="px-4 py-3 min-w-[120px]">
+                    <input
+                      type="number"
+                      step="any"
+                      className="w-[120px] rounded-xl bg-cream px-3 py-2 text-xs ring-1 ring-borderSoft"
+                      value={r.multa_estimada_usd ?? ""}
+                      disabled={!canEditMatrix}
+                      placeholder={String(estimateUsdFromSanction(r.sancion) ?? "")}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        void updateRow(r.id, {
+                          multa_estimada_usd: v === "" ? null : Number(v)
+                        });
+                      }}
+                    />
+                    <div className="mt-1 text-[10px] text-charcoal/50">
+                      Sug.: ${estimateUsdFromSanction(r.sancion) != null ? Number(estimateUsdFromSanction(r.sancion)).toLocaleString() : "—"}
+                    </div>
                   </td>
                   <td className="px-4 py-3 min-w-[220px]">
                     <input
                       className="w-[220px] rounded-xl bg-cream px-3 py-2 text-xs ring-1 ring-borderSoft"
                       value={r.proceso_actividad_relacionada ?? ""}
-                      disabled={!canEditResponsable}
+                      disabled={!canEditMatrix}
                       onChange={(e) => void updateRow(r.id, { proceso_actividad_relacionada: e.target.value || null } as any)}
                       placeholder="Proceso / actividad"
                     />
@@ -507,7 +595,7 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
                     <input
                       className="w-[180px] rounded-xl bg-cream px-3 py-2 text-xs ring-1 ring-borderSoft"
                       value={r.sponsor ?? ""}
-                      disabled={!canEditResponsable}
+                      disabled={!canEditMatrix}
                       onChange={(e) => void updateRow(r.id, { sponsor: e.target.value || null } as any)}
                       placeholder="Gerencia responsable"
                     />
@@ -516,7 +604,7 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
                     <input
                       className="w-[200px] rounded-xl bg-cream px-3 py-2 text-xs ring-1 ring-borderSoft"
                       value={r.responsable_proceso ?? ""}
-                      disabled={!canEditResponsable}
+                      disabled={!canEditMatrix}
                       onChange={(e) => void updateRow(r.id, { responsable_proceso: e.target.value || null } as any)}
                       placeholder="Jefatura responsable del proceso"
                     />
@@ -527,7 +615,22 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
                         className="w-full rounded-xl bg-cream px-3 py-2 text-xs ring-1 ring-borderSoft"
                         placeholder="Pega link (Drive/Oficial) ..."
                         value={r.evidencia_url ?? ""}
+                        disabled={!canEditMatrix}
                         onChange={(e) => void updateRow(r.id, { evidencia_url: e.target.value })}
+                      />
+                      <input
+                        className="w-full rounded-xl bg-cream px-3 py-2 text-xs ring-1 ring-borderSoft"
+                        placeholder="Link fuente oficial"
+                        value={r.link_fuente_oficial ?? ""}
+                        disabled={!canEditMatrix}
+                        onChange={(e) => void updateRow(r.id, { link_fuente_oficial: e.target.value || null })}
+                      />
+                      <input
+                        className="w-full rounded-xl bg-cream px-3 py-2 text-xs ring-1 ring-borderSoft"
+                        placeholder="URL fuente verificada"
+                        value={r.fuente_verificada_url ?? ""}
+                        disabled={!canEditMatrix}
+                        onChange={(e) => void updateRow(r.id, { fuente_verificada_url: e.target.value || null })}
                       />
                       {canDeleteFiles && r.evidencia_url ? (
                         <button
@@ -571,7 +674,7 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
                           className="w-[190px] rounded-xl bg-cream px-3 py-2 text-xs ring-1 ring-borderSoft"
                           placeholder="Responsable compliance"
                           value={r.responsable ?? ""}
-                          disabled={!canEditResponsable}
+                          disabled={!canEditMatrix}
                           onChange={(e) => void updateRow(r.id, { responsable: e.target.value })}
                         />
                       </div>
@@ -581,7 +684,7 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
                           className="w-[190px] rounded-xl bg-cream px-3 py-2 text-xs ring-1 ring-borderSoft"
                           placeholder="Gerencia a cargo"
                           value={r.gerencia_competente ?? ""}
-                          disabled={!canEditResponsable}
+                          disabled={!canEditMatrix}
                           onChange={(e) => void updateRow(r.id, { gerencia_competente: e.target.value || null })}
                         />
                       </div>
@@ -591,32 +694,67 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
                           className="w-[190px] rounded-xl bg-cream px-3 py-2 text-xs ring-1 ring-borderSoft"
                           placeholder="Jefatura/área a cargo"
                           value={r.area_competente ?? ""}
-                          disabled={!canEditResponsable}
+                          disabled={!canEditMatrix}
                           onChange={(e) => void updateRow(r.id, { area_competente: e.target.value || null })}
                         />
                       </div>
                     </div>
-                    {!canEditResponsable ? (
-                      <div className="mt-1 text-[11px] text-charcoal/50">Solo admin/super admin.</div>
-                    ) : null}
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`inline-flex rounded-full px-2 py-1 text-xs ring-1 ${badgePrioridad(r.prioridad)}`}>
-                      {r.prioridad ?? classifyPrioridad({ sancion: r.sancion, multa_estimada_usd: r.multa_estimada_usd })}
-                    </span>
+                    <select
+                      className="mb-2 w-full max-w-[140px] rounded-xl bg-cream px-2 py-1 text-xs ring-1 ring-borderSoft"
+                      value={r.prioridad ?? ""}
+                      disabled={!canEditMatrix}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        void updateRow(r.id, {
+                          prioridad: v === "" ? null : (v as Row["prioridad"])
+                        });
+                      }}
+                    >
+                      <option value="">Auto (reglas)</option>
+                      <option value="critico">crítico</option>
+                      <option value="alto">alto</option>
+                      <option value="medio">medio</option>
+                      <option value="bajo">bajo</option>
+                    </select>
+                    <div>
+                      <span className={`inline-flex rounded-full px-2 py-1 text-xs ring-1 ${badgePrioridad(r.prioridad)}`}>
+                        {r.prioridad ??
+                          classifyPrioridad({
+                            sancion: r.sancion,
+                            multa_estimada_usd: r.multa_estimada_usd,
+                            priorityScore: computePriorityScore(r.impacto_economico, r.probabilidad_incumplimiento)
+                          })}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 w-[120px]">
+                    {canAdminMatrix ? (
+                      <button
+                        type="button"
+                        disabled={deletingRowId === r.id}
+                        className="w-full rounded-xl border border-red-200 bg-red-50 px-2 py-2 text-[11px] font-medium text-red-800 hover:bg-red-100 disabled:opacity-50"
+                        onClick={() => void deleteMatrixRow(r.id)}
+                      >
+                        {deletingRowId === r.id ? "…" : "Eliminar fila"}
+                      </button>
+                    ) : (
+                      <span className="text-[10px] text-charcoal/40">—</span>
+                    )}
                   </td>
                 </tr>
               ))}
               {!loading && rows.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-4 text-sm text-charcoal/60" colSpan={8}>
+                  <td className="px-4 py-4 text-sm text-charcoal/60" colSpan={19}>
                     Sin filas aún. Sube normativa en AI Notebook y aprueba propuestas.
                   </td>
                 </tr>
               ) : null}
               {loading ? (
                 <tr>
-                  <td className="px-4 py-4 text-sm text-charcoal/60" colSpan={8}>
+                  <td className="px-4 py-4 text-sm text-charcoal/60" colSpan={19}>
                     Cargando...
                   </td>
                 </tr>
@@ -631,8 +769,8 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
           <div>
             <div className="text-sm font-medium">Propuestas Pendientes (IA)</div>
             <div className="mt-1 text-xs text-charcoal/60">
-              Indica si <strong>aplica</strong>, asigna <strong>gerencia</strong>, <strong>jefatura</strong> y <strong>supervisor legal</strong> (revisión en el sistema). La aprobación a matriz sigue siendo{" "}
-              <strong>Super Admin</strong>. Si marcas «No aplica», no se podrá aprobar hasta corregirlo.
+              Indica si <strong>aplica</strong>, asigna <strong>gerencia</strong>, <strong>jefatura</strong> y <strong>supervisor legal</strong>. La aprobación a matriz la realizan{" "}
+              <strong>admin o super admin</strong>. Si marcas «No aplica», no se podrá aprobar hasta corregirlo.
             </div>
           </div>
           <div className="text-xs text-charcoal/60">{propuestas.length} pendientes</div>
@@ -809,7 +947,7 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
                         />
                         <button
                           type="button"
-                          className="rounded-lg bg-sidebarRose px-3 py-1.5 text-xs font-medium text-cream disabled:opacity-50"
+                          className="rounded-lg bg-charcoal px-3 py-1.5 text-xs font-medium text-cream shadow-sm hover:bg-charcoal/90 disabled:opacity-50"
                           disabled={iaBusy === p.id}
                           onClick={() => void preguntarPropuesta(p.id)}
                         >
@@ -819,13 +957,18 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
                     ) : null}
                     {canApprove ? (
                       <button
-                        className="rounded-xl bg-sidebarRose px-3 py-2 text-sm font-medium text-cream hover:opacity-90"
+                        type="button"
+                        className="rounded-xl bg-charcoal px-3 py-2 text-sm font-medium text-cream shadow-sm hover:bg-charcoal/90"
                         onClick={() => void approvePropuesta(p.id)}
                       >
                         Aprobar → matriz
                       </button>
                     ) : (
-                      <button className="rounded-xl bg-white px-3 py-2 text-sm ring-1 ring-borderSoft opacity-60" disabled>
+                      <button
+                        type="button"
+                        className="rounded-xl border border-charcoal/15 bg-cream px-3 py-2 text-sm font-medium text-charcoal/50"
+                        disabled
+                      >
                         Aprobar (Super Admin)
                       </button>
                     )}

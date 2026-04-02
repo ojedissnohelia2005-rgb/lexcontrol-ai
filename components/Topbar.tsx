@@ -47,7 +47,7 @@ export function Topbar() {
           <div className="flex flex-wrap items-center justify-end gap-2">
             <Link
               href="/login"
-              className="rounded-xl bg-sidebarRose px-3 py-2 text-sm font-medium text-cream hover:opacity-90"
+              className="rounded-xl bg-charcoal px-3 py-2 text-sm font-medium text-cream shadow-sm hover:bg-charcoal/90"
             >
               Iniciar sesión
             </Link>
@@ -94,7 +94,7 @@ export function Topbar() {
           <div className="flex flex-wrap items-center justify-end gap-2">
             <Link
               href="/login"
-              className="rounded-xl bg-sidebarRose px-3 py-2 text-sm font-medium text-cream hover:opacity-90"
+              className="rounded-xl bg-charcoal px-3 py-2 text-sm font-medium text-cream shadow-sm hover:bg-charcoal/90"
             >
               Iniciar sesión
             </Link>

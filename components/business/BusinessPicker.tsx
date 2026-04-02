@@ -149,7 +149,10 @@ export function BusinessPicker({
               Debes tener un negocio seleccionado para que el dashboard y la matriz funcionen.
             </div>
           </div>
-          <Link className="rounded-xl bg-cream px-3 py-2 text-sm ring-1 ring-borderSoft hover:bg-cream/70" href="/dashboard">
+          <Link
+            className="rounded-xl border border-charcoal/15 bg-white px-3 py-2 text-sm font-medium text-charcoal shadow-sm hover:bg-cream"
+            href="/dashboard"
+          >
             Ir al Dashboard
           </Link>
         </div>
@@ -201,7 +204,8 @@ export function BusinessPicker({
           </label>
 
           <button
-            className="mt-1 w-full rounded-xl bg-sidebarRose px-3 py-2 text-sm font-medium text-cream hover:opacity-90 disabled:opacity-50"
+            type="button"
+            className="mt-1 w-full rounded-xl bg-charcoal px-3 py-2 text-sm font-medium text-cream shadow-sm hover:bg-charcoal/90 disabled:opacity-50"
             disabled={creating || !supabase || !nombre.trim()}
             onClick={() => void create()}
           >
@@ -214,7 +218,8 @@ export function BusinessPicker({
         <div className="flex items-center justify-between">
           <div className="text-sm font-medium">Tus negocios</div>
           <button
-            className="rounded-xl bg-cream px-3 py-2 text-sm ring-1 ring-borderSoft hover:bg-cream/70 disabled:opacity-50"
+            type="button"
+            className="rounded-xl border border-charcoal/15 bg-white px-3 py-2 text-sm font-medium text-charcoal shadow-sm hover:bg-cream disabled:opacity-50"
             disabled={loading}
             onClick={() => void load()}
           >
@@ -261,7 +266,7 @@ export function BusinessPicker({
                     type="button"
                     disabled={isDeleting}
                     onClick={() => void eliminarNegocio(n.id)}
-                    className="shrink-0 rounded-xl bg-white px-3 py-1.5 text-xs text-red-700 ring-1 ring-borderSoft hover:bg-cream/70 disabled:opacity-50"
+                    className="shrink-0 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-800 hover:bg-red-100 disabled:opacity-50"
                   >
                     {isDeleting ? "Eliminando…" : "Eliminar"}
                   </button>

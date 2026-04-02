@@ -193,7 +193,10 @@ export function DashboardClient() {
             <div className="text-sm font-medium">Top 5 Riesgos Críticos</div>
             <div className="mt-1 text-xs text-charcoal/60">Priorización automática (crítico/alto).</div>
           </div>
-          <Link className="rounded-xl bg-cream px-3 py-2 text-sm ring-1 ring-borderSoft hover:bg-cream/70" href={`/business/${negocioId}`}>
+          <Link
+            className="rounded-xl border border-charcoal/15 bg-white px-3 py-2 text-sm font-medium text-charcoal shadow-sm hover:bg-cream"
+            href={`/business/${negocioId}`}
+          >
             Ver negocio
           </Link>
         </div>

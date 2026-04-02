@@ -327,11 +327,24 @@ drop policy if exists "matriz_update_access" on public.matriz_cumplimiento;
 create policy "matriz_update_access" on public.matriz_cumplimiento for update
 using (public.has_negocio_access(negocio_id));
 
-drop policy if exists "matriz_delete_super_admin" on public.matriz_cumplimiento;
-create policy "matriz_delete_super_admin" on public.matriz_cumplimiento for delete
-using (public.is_super_admin());
+create or replace function public.is_admin_or_super_admin()
+returns boolean
+language sql
+stable
+as $$
+  select exists (
+    select 1 from public.profiles p
+    where p.id = auth.uid()
+      and p.rol in ('admin', 'super_admin')
+  );
+$$;
 
--- Propuestas: select for access; approve/update only super_admin
+drop policy if exists "matriz_delete_super_admin" on public.matriz_cumplimiento;
+drop policy if exists "matriz_delete_admin" on public.matriz_cumplimiento;
+create policy "matriz_delete_admin" on public.matriz_cumplimiento for delete
+using (public.has_negocio_access(negocio_id) and public.is_admin_or_super_admin());
+
+-- Propuestas: lectura/insersión/update con acceso al negocio; borrado restringido
 drop policy if exists "propuestas_select_access" on public.propuestas_pendientes;
 create policy "propuestas_select_access" on public.propuestas_pendientes for select
 using (public.has_negocio_access(negocio_id));
@@ -341,8 +354,9 @@ create policy "propuestas_insert_access" on public.propuestas_pendientes for ins
 with check (public.has_negocio_access(negocio_id));
 
 drop policy if exists "propuestas_update_super_admin" on public.propuestas_pendientes;
-create policy "propuestas_update_super_admin" on public.propuestas_pendientes for update
-using (public.is_super_admin());
+drop policy if exists "propuestas_update_access" on public.propuestas_pendientes;
+create policy "propuestas_update_access" on public.propuestas_pendientes for update
+using (public.has_negocio_access(negocio_id));
 
 drop policy if exists "propuestas_delete_super_admin" on public.propuestas_pendientes;
 create policy "propuestas_delete_super_admin" on public.propuestas_pendientes for delete
