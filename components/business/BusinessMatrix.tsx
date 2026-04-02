@@ -8,6 +8,12 @@ import { labelClasificacionDoc } from "@/lib/normativa-titles";
 import { fetchNormativaDocsMiniRowsForBusiness, type NormativaMiniRow } from "@/lib/normativa-docs-query";
 import { IaMarkdownStream } from "@/components/IaMarkdownStream";
 import { MATRIZ_TRACKED_EDIT_FIELDS } from "@/lib/matriz-tracked-fields";
+import {
+  displayGerenciaMatriz,
+  displayJefaturaMatriz,
+  patchGerenciaUnificada,
+  patchJefaturaUnificada
+} from "@/lib/matriz-gerencia-jefatura";
 
 type Row = {
   id: string;
@@ -81,6 +87,15 @@ function grupoEtiquetaObligacion(list: Propuesta[]): string {
   const ex = list[0]?.extra && typeof list[0]!.extra === "object" ? (list[0]!.extra as Record<string, unknown>) : {};
   const t = typeof ex.obligacion_grupo_etiqueta === "string" ? ex.obligacion_grupo_etiqueta.trim() : "";
   return t || "Misma obligación — varios artículos";
+}
+
+function propuestaObligacionConsolidada(list: Propuesta[]): string | null {
+  for (const p of list) {
+    const ex = p.extra && typeof p.extra === "object" ? (p.extra as Record<string, unknown>) : {};
+    const c = typeof ex.obligacion_resumen_consolidado === "string" ? ex.obligacion_resumen_consolidado.trim() : "";
+    if (c.length >= 15) return c;
+  }
+  return null;
 }
 
 function badgeEstado(estado: string) {
@@ -528,7 +543,7 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
           <div>
             <div className="text-sm font-medium">Matriz de Cumplimiento</div>
             <div className="mt-1 text-xs text-charcoal/60">
-              Todos los usuarios con acceso pueden editar celdas. Admin/super admin pueden eliminar filas y archivos. Usa IA para completar campos vacíos.
+              Todos los usuarios con acceso pueden editar celdas. Admin/super admin pueden eliminar filas y archivos. Usa IA para completar campos vacíos. Gerencia y jefatura se gestionan solo en la columna «Responsable» (un solo valor por fila, sin duplicar).
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -580,8 +595,6 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
                 <th className="px-4 py-3">Sanción</th>
                 <th className="px-4 py-3">Multa Estimada</th>
                 <th className="px-4 py-3">Proceso/Actividad</th>
-                <th className="px-4 py-3">Gerencia</th>
-                <th className="px-4 py-3">Jefatura resp. proceso</th>
                 <th className="px-4 py-3">Documentación</th>
                 <th className="px-4 py-3">Responsable</th>
                 <th className="px-4 py-3">Prioridad</th>
@@ -725,24 +738,6 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
                       placeholder="Proceso / actividad"
                     />
                   </td>
-                  <td className="px-4 py-3 min-w-[180px]">
-                    <input
-                      className="w-[180px] rounded-xl bg-cream px-3 py-2 text-xs ring-1 ring-borderSoft"
-                      value={r.sponsor ?? ""}
-                      disabled={!canEditMatrix}
-                      onChange={(e) => void updateRow(r.id, { sponsor: e.target.value || null } as any)}
-                      placeholder="Gerencia responsable"
-                    />
-                  </td>
-                  <td className="px-4 py-3 min-w-[200px]">
-                    <input
-                      className="w-[200px] rounded-xl bg-cream px-3 py-2 text-xs ring-1 ring-borderSoft"
-                      value={r.responsable_proceso ?? ""}
-                      disabled={!canEditMatrix}
-                      onChange={(e) => void updateRow(r.id, { responsable_proceso: e.target.value || null } as any)}
-                      placeholder="Jefatura responsable del proceso"
-                    />
-                  </td>
                   <td className="px-4 py-3 min-w-[240px]">
                     <div className="space-y-2">
                       <input
@@ -820,23 +815,23 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
                         />
                       </div>
                       <div>
-                        <div className="text-[11px] font-medium text-charcoal/70">Gerencia</div>
+                        <div className="text-[11px] font-medium text-charcoal/70">Gerencia a cargo</div>
                         <input
                           className="w-[190px] rounded-xl bg-cream px-3 py-2 text-xs ring-1 ring-borderSoft"
-                          placeholder="Gerencia a cargo"
-                          value={r.gerencia_competente ?? ""}
+                          placeholder="Ej. Gerencia Financiera"
+                          value={displayGerenciaMatriz(r)}
                           disabled={!canEditMatrix}
-                          onChange={(e) => void updateRow(r.id, { gerencia_competente: e.target.value || null })}
+                          onChange={(e) => void updateRow(r.id, patchGerenciaUnificada(e.target.value))}
                         />
                       </div>
                       <div>
-                        <div className="text-[11px] font-medium text-charcoal/70">Jefatura</div>
+                        <div className="text-[11px] font-medium text-charcoal/70">Jefatura / área del proceso</div>
                         <input
                           className="w-[190px] rounded-xl bg-cream px-3 py-2 text-xs ring-1 ring-borderSoft"
-                          placeholder="Jefatura/área a cargo"
-                          value={r.area_competente ?? ""}
+                          placeholder="Ej. Tesorería"
+                          value={displayJefaturaMatriz(r)}
                           disabled={!canEditMatrix}
-                          onChange={(e) => void updateRow(r.id, { area_competente: e.target.value || null })}
+                          onChange={(e) => void updateRow(r.id, patchJefaturaUnificada(e.target.value))}
                         />
                       </div>
                     </div>
@@ -888,14 +883,14 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
               ))}
               {!loading && rows.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-4 text-sm text-charcoal/60" colSpan={19}>
+                  <td className="px-4 py-4 text-sm text-charcoal/60" colSpan={17}>
                     Sin filas aún. Sube normativa en AI Notebook y aprueba propuestas.
                   </td>
                 </tr>
               ) : null}
               {loading ? (
                 <tr>
-                  <td className="px-4 py-4 text-sm text-charcoal/60" colSpan={19}>
+                  <td className="px-4 py-4 text-sm text-charcoal/60" colSpan={17}>
                     Cargando...
                   </td>
                 </tr>
@@ -932,6 +927,7 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
         <div className="mt-4 space-y-3">
           {gruposPropuestas.map(({ key, list }) => {
             const isGroup = list.length > 1;
+            const consolidadoGrupo = propuestaObligacionConsolidada(list);
             const ids = list.map((x) => x.id);
             const primary = list[0]!;
             const aplicaKey = (v: boolean | null | undefined) =>
@@ -960,7 +956,143 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
                     Grupo (misma obligación): {grupoEtiquetaObligacion(list)} · {list.length} artículos
                   </div>
                 ) : null}
-                {list.map((p) => {
+                {isGroup ? (
+                  <>
+                    {consolidadoGrupo ? (
+                      <div className="mb-3 rounded-xl bg-white px-3 py-3 text-sm leading-relaxed text-charcoal ring-1 ring-borderSoft">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-charcoal/50">
+                          Obligación (resumen unificado)
+                        </div>
+                        <p className="mt-1.5">{consolidadoGrupo}</p>
+                      </div>
+                    ) : (
+                      <div className="mb-3 rounded-xl bg-amber-50/80 px-3 py-2 text-xs text-amber-950 ring-1 ring-amber-200/80">
+                        La IA no devolvió un resumen unificado para este grupo. Revisa el desglose por artículo.
+                      </div>
+                    )}
+                    <details className="group/desglose mb-1 rounded-xl border border-borderSoft bg-white/50">
+                      <summary className="cursor-pointer select-none px-3 py-2.5 text-xs font-semibold text-charcoal outline-none marker:content-none [&::-webkit-details-marker]:hidden">
+                        <span className="text-sidebarRose underline decoration-sidebarRose/30 group-open/desglose:decoration-sidebarRose">
+                          Ver desglose por artículo
+                        </span>
+                        <span className="ml-2 font-normal text-charcoal/55">({list.length})</span>
+                      </summary>
+                      <div className="space-y-0 border-t border-borderSoft px-1 pb-2 pt-1">
+                        {list.map((p) => {
+                          const multa = p.multa_estimada_usd ?? estimateUsdFromSanction(p.sancion) ?? null;
+                          const score = computePriorityScore(p.impacto_economico, p.probabilidad_incumplimiento);
+                          const prioridad =
+                            p.prioridad ?? classifyPrioridad({ sancion: p.sancion, multa_estimada_usd: multa, priorityScore: score });
+                          const vig = esVigilancia(p.extra);
+                          return (
+                            <div key={p.id} className="border-t border-borderSoft pt-4 mt-4 first:mt-0 first:border-0 first:pt-0">
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <div className="text-sm font-semibold">{p.articulo}</div>
+                                    {vig ? (
+                                      <span className="rounded-full bg-sidebarRose/20 px-2 py-0.5 text-[11px] font-medium text-sidebarRose ring-1 ring-sidebarRose/30">
+                                        Vigilancia horaria
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  <div className="mt-1 text-sm">{p.requisito}</div>
+                                  {vig && p.extra && typeof p.extra.alerta_contexto === "string" ? (
+                                    <div className="mt-1 text-xs text-charcoal/50">Contexto alerta: {p.extra.alerta_contexto}</div>
+                                  ) : null}
+                                  <div className="mt-2 text-xs text-charcoal/60">{p.cita_textual ?? "—"}</div>
+                                  <div className="mt-2 flex flex-wrap gap-2">
+                                    <span className={`inline-flex rounded-full px-2 py-1 text-xs ring-1 ${badgeEstado(p.estado)}`}>{p.estado}</span>
+                                    <span className={`inline-flex rounded-full px-2 py-1 text-xs ring-1 ${badgePrioridad(prioridad)}`}>{prioridad}</span>
+                                    <span className="inline-flex rounded-full bg-white px-2 py-1 text-xs ring-1 ring-borderSoft">
+                                      Multa: {multa ? `$${Number(multa).toLocaleString()}` : "—"}
+                                    </span>
+                                  </div>
+                                  <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                                    {p.fuente_verificada_url ? (
+                                      <a className="text-sidebarRose underline" href={p.fuente_verificada_url} target="_blank" rel="noreferrer">
+                                        Fuente verificada
+                                      </a>
+                                    ) : null}
+                                    {p.link_fuente_oficial ? (
+                                      <a className="text-sidebarRose underline" href={p.link_fuente_oficial} target="_blank" rel="noreferrer">
+                                        Link oficial
+                                      </a>
+                                    ) : null}
+                                    {p.normativa_doc_id ? (
+                                      <span className="inline-flex flex-wrap items-center gap-1 rounded-full bg-white px-2 py-0.5 ring-1 ring-borderSoft">
+                                        {normas[p.normativa_doc_id]?.titulo ? (
+                                          <>
+                                            <span className="font-medium text-charcoal/80">{normas[p.normativa_doc_id]!.titulo}</span>
+                                            {normas[p.normativa_doc_id]?.clasificacion_documento ? (
+                                              <span className="rounded-full bg-charcoal/5 px-1.5 py-0.5 text-[10px] ring-1 ring-borderSoft">
+                                                {labelClasificacionDoc(normas[p.normativa_doc_id]?.clasificacion_documento)}
+                                              </span>
+                                            ) : null}
+                                          </>
+                                        ) : null}
+                                        <span className="text-charcoal/55">Doc: {p.normativa_doc_id.slice(0, 8)}…</span>
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  {(p.gerencia_competente || p.area_competente) && (
+                                    <div className="mt-2 text-[11px] text-charcoal/55">
+                                      Sugerencia IA — Gerencia: {p.gerencia_competente ?? "—"} · Jefatura/área: {p.area_competente ?? "—"}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex flex-col items-stretch gap-2 sm:items-end">
+                                  {vig ? (
+                                    <div className="flex flex-wrap justify-end gap-2">
+                                      <button
+                                        type="button"
+                                        className="rounded-xl bg-white px-3 py-2 text-xs ring-1 ring-borderSoft hover:bg-cream/70 disabled:opacity-50"
+                                        disabled={iaBusy === p.id}
+                                        onClick={() => void resumenPropuesta(p.id)}
+                                      >
+                                        {iaBusy === p.id ? "..." : "Resumen IA"}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="rounded-xl bg-white px-3 py-2 text-xs ring-1 ring-borderSoft hover:bg-cream/70"
+                                        onClick={() => {
+                                          setQaPropuestaId(qaPropuestaId === p.id ? null : p.id);
+                                          setIaPanel(null);
+                                        }}
+                                      >
+                                        {qaPropuestaId === p.id ? "Ocultar pregunta" : "Preguntar a IA"}
+                                      </button>
+                                    </div>
+                                  ) : null}
+                                  {qaPropuestaId === p.id ? (
+                                    <div className="w-full max-w-md space-y-2 rounded-xl bg-white p-3 ring-1 ring-borderSoft">
+                                      <input
+                                        className="w-full rounded-lg bg-cream px-2 py-2 text-xs ring-1 ring-borderSoft"
+                                        placeholder="¿Deberíamos agregar esto a la matriz y por qué?"
+                                        value={qaPregunta}
+                                        onChange={(e) => setQaPregunta(e.target.value)}
+                                      />
+                                      <button
+                                        type="button"
+                                        className="rounded-lg bg-charcoal px-3 py-1.5 text-xs font-medium text-cream shadow-sm hover:bg-charcoal/90 disabled:opacity-50"
+                                        disabled={iaBusy === p.id}
+                                        onClick={() => void preguntarPropuesta(p.id)}
+                                      >
+                                        Enviar pregunta
+                                      </button>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </details>
+                  </>
+                ) : null}
+                {!isGroup
+                  ? list.map((p) => {
                   const multa = p.multa_estimada_usd ?? estimateUsdFromSanction(p.sancion) ?? null;
                   const score = computePriorityScore(p.impacto_economico, p.probabilidad_incumplimiento);
                   const prioridad = p.prioridad ?? classifyPrioridad({ sancion: p.sancion, multa_estimada_usd: multa, priorityScore: score });
@@ -1067,7 +1199,8 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
                       </div>
                     </div>
                   );
-                })}
+                })
+                  : null}
                 <div
                   key={`triage-${key}-${primary.updated_at ?? ""}`}
                   className="mt-4 grid gap-3 rounded-xl bg-white/70 p-3 ring-1 ring-borderSoft sm:grid-cols-2"
@@ -1152,7 +1285,8 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
                       className="rounded-xl bg-charcoal px-4 py-2 text-sm font-medium text-cream shadow-sm hover:bg-charcoal/90"
                       onClick={() => void approvePropuestaGroup(ids)}
                     >
-                      Aprobar {isGroup ? `${list.length} artículos` : ""} → matriz
+                      Aprobar
+                      {isGroup ? ` ${list.length} artículos (una obligación)` : ""} → matriz
                     </button>
                   ) : (
                     <button type="button" className="rounded-xl border border-charcoal/15 bg-cream px-3 py-2 text-sm font-medium text-charcoal/50" disabled>

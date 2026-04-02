@@ -4,6 +4,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { GeminiExtractionItem } from "@/app/api/gemini/extract/route";
 import { generateAiText } from "@/lib/ai";
 import { classifyPrioridad, computePriorityScore, estimateUsdFromSanction } from "@/lib/finance";
+import { normalizeOrganizacion4 } from "@/lib/matriz-gerencia-jefatura";
 
 type RouteCtx = { params: Promise<{ negocioId: string }> };
 
@@ -134,6 +135,7 @@ export async function POST(req: Request, ctx: RouteCtx) {
       if (!respaldado && !observaciones.toLowerCase().includes("biblioteca del sistema")) {
         observaciones = observaciones ? `${AVISO_SIN_BIBLIOTECA} ${observaciones}` : AVISO_SIN_BIBLIOTECA;
       }
+      const org = normalizeOrganizacion4(it);
       return {
         negocio_id: negocioId,
         articulo: it.articulo || "—",
@@ -150,10 +152,10 @@ export async function POST(req: Request, ctx: RouteCtx) {
         campo_juridico: it.campo_juridico ?? null,
         observaciones: observaciones || null,
         proceso_actividad_relacionada: it.proceso_actividad_relacionada ?? null,
-        sponsor: it.sponsor ?? null,
-        responsable_proceso: it.responsable_proceso ?? null,
-        gerencia_competente: it.gerencia_competente ?? null,
-        area_competente: it.area_competente ?? null,
+        sponsor: org.sponsor,
+        responsable_proceso: org.responsable_proceso,
+        gerencia_competente: org.gerencia_competente,
+        area_competente: org.area_competente,
         multa_estimada_usd: multa,
         impacto_economico: it.impacto_economico,
         probabilidad_incumplimiento: it.probabilidad_incumplimiento,

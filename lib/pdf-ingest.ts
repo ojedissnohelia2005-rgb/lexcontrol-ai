@@ -25,6 +25,10 @@ export type IngestPdfResult = {
   comparacion: ComparacionNormativa;
   fuente_url: string | null;
   storage_path: string | null;
+  /** Aviso cuando la IA filtró todo o no hubo ítems aplicables al negocio */
+  ingest_aviso?: string | null;
+  /** Cuántos artículos/requisitos se descartaron por no aplicar al modelo de negocio */
+  items_omitidos_por_no_aplicables?: number;
 };
 
 /**
@@ -173,7 +177,7 @@ export async function ingestNormativaPdf(
 
   const existentes = siblings ?? [];
   let comparacion = await compareNormativaWithGemini({
-    titulo_nuevo: fileName,
+    titulo_nuevo: tituloDetectado,
     texto_nuevo: texto,
     sha256_nuevo: sha256,
     existentes: existentes.map((e) => ({
@@ -209,7 +213,10 @@ export async function ingestNormativaPdf(
       }
     })
   });
-  const data = (await res.json()) as Record<string, unknown>;
+  const data = (await res.json()) as Record<string, unknown> & {
+    meta?: { items_omitidos_por_no_aplicables?: number };
+    aviso?: string;
+  };
   if (!res.ok) {
     if (res.status === 429 && data?.code === "GEMINI_QUOTA") {
       throw new PdfIngestError(String(data.error ?? "Cuota IA"), 429, "GEMINI_QUOTA", {
@@ -222,12 +229,19 @@ export async function ingestNormativaPdf(
   }
 
   const itemsOut = Array.isArray(data.items) ? data.items : [];
+  const omitidos =
+    typeof data.meta?.items_omitidos_por_no_aplicables === "number"
+      ? data.meta.items_omitidos_por_no_aplicables
+      : undefined;
+  const ingestAviso = typeof data.aviso === "string" ? data.aviso : null;
   return {
     items: itemsOut,
     normativa_doc_id: inserted.id,
     sha256,
     comparacion,
     fuente_url,
-    storage_path
+    storage_path,
+    ingest_aviso: ingestAviso,
+    items_omitidos_por_no_aplicables: omitidos
   };
 }

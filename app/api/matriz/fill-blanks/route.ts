@@ -57,6 +57,43 @@ function parseAiJson(text: string): unknown {
   return JSON.parse(t);
 }
 
+/** La IA suele mandar números como string; Zod estricto fallaba todo el objeto. */
+function coerceAiNumericFields(o: Record<string, unknown>) {
+  const multa = o.multa_estimada_usd;
+  if (multa != null && typeof multa === "string" && multa.trim()) {
+    const t = multa.trim();
+    const thousandsEu = /^\d{1,3}(\.\d{3})+(,\d+)?$/;
+    const n = thousandsEu.test(t)
+      ? Number(t.replace(/\./g, "").replace(",", "."))
+      : Number(t.replace(/,/g, ""));
+    if (Number.isFinite(n)) o.multa_estimada_usd = n;
+    else delete o.multa_estimada_usd;
+  }
+  for (const key of ["impacto_economico", "probabilidad_incumplimiento"] as const) {
+    const v = o[key];
+    if (v == null) continue;
+    if (typeof v === "string" && v.trim()) {
+      const n = Math.round(Number(v.trim().replace(",", ".")));
+      if (Number.isFinite(n)) o[key] = n;
+      else delete o[key];
+    }
+  }
+  const pr = o.prioridad;
+  if (typeof pr === "string" && pr.trim()) {
+    const x = pr
+      .trim()
+      .toLowerCase()
+      .replace(/á/g, "a")
+      .replace(/é/g, "e")
+      .replace(/í/g, "i")
+      .replace(/ó/g, "o")
+      .replace(/ú/g, "u");
+    const ok = ["critico", "alto", "medio", "bajo"] as const;
+    if ((ok as readonly string[]).includes(x)) o.prioridad = x;
+    else delete o.prioridad;
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const supabase = createSupabaseServerClient();
@@ -103,14 +140,10 @@ export async function POST(req: Request) {
         "campo_juridico",
         "observaciones",
         "proceso_actividad_relacionada",
-        "sponsor",
-        "responsable_proceso",
         "articulo",
         "requisito",
         "sancion",
         "responsable",
-        "gerencia_competente",
-        "area_competente",
         "link_fuente_oficial",
         "fuente_verificada_url",
         "cita_textual",
@@ -118,6 +151,10 @@ export async function POST(req: Request) {
       ]) {
         if (isEmptyVal(row[k])) emptyFields.push(k);
       }
+      const gerenciaFilled = !isEmptyVal(row.gerencia_competente) || !isEmptyVal(row.sponsor);
+      if (!gerenciaFilled) emptyFields.push("gerencia_competente");
+      const jefaturaFilled = !isEmptyVal(row.area_competente) || !isEmptyVal(row.responsable_proceso);
+      if (!jefaturaFilled) emptyFields.push("area_competente");
       if (row.multa_estimada_usd == null) emptyFields.push("multa_estimada_usd");
       if (row.impacto_economico == null) emptyFields.push("impacto_economico");
       if (row.probabilidad_incumplimiento == null) emptyFields.push("probabilidad_incumplimiento");
@@ -167,12 +204,14 @@ export async function POST(req: Request) {
         "- Incluye SOLO claves de la lista de campos vacíos que puedas llenar de forma defendible.",
         `Campos vacíos candidatos: ${emptyFields.join(", ")}.`,
         "fecha_publicacion en formato YYYY-MM-DD cuando aplique.",
-        "impacto_economico: entero 1-10; probabilidad_incumplimiento: entero 1-5; multa_estimada_usd: número en USD cuando haya base razonable (si no, omite).",
-        "prioridad solo si está vacía: critico | alto | medio | bajo según gravedad.",
+        "impacto_economico: entero JSON 1-10 (número, no string). probabilidad_incumplimiento: entero JSON 1-5.",
+        "multa_estimada_usd: número JSON en USD (no string). Si la sanción es cualitativa, estima un orden de magnitud conservador para priorización (100–25000 USD típico en administrativo/tributario) y menciona en observaciones que es estimación.",
+        "prioridad solo si está vacía: critico | alto | medio | bajo (sin tilde en critico).",
+        "gerencia_competente y area_competente: unidad de gerencia y jefatura/área; no uses sponsor ni responsable_proceso en el JSON.",
         "",
-        "EXCEPCIÓN (último recurso, debe ser rara): solo si, tras razonar, no puedes completar ningún campo vacío con ningún grado útil de certeza (p. ej. fila totalmente aislada sin norma, sector o requisito identificable), responde ÚNICAMENTE:",
+        "EXCEPCIÓN (último recurso, casi nunca): solo si la fila no tiene requisito ni artículo ni contexto identificable y no puedes inferir nada útil, responde ÚNICAMENTE:",
         '{"sin_normativa_en_base":true}',
-        "No uses sin_normativa_en_base por comodidad; el caso normal es devolver campos rellenados.",
+        "No uses sin_normativa_en_base si puedes rellenar al menos impacto_economico, probabilidad_incumplimiento o multa_estimada_usd a partir del requisito y la sanción descritos.",
         "",
         "### Contexto negocio\n" + negocioCtx,
         "",
@@ -207,6 +246,8 @@ export async function POST(req: Request) {
         continue;
       }
 
+      if (rawObj) coerceAiNumericFields(rawObj);
+
       const parsed = FillOut.safeParse(parsedRaw);
       if (!parsed.success) {
         notes.push(`${id}: formato de IA no válido`);
@@ -229,8 +270,6 @@ export async function POST(req: Request) {
       tryStr("campo_juridico");
       tryStr("observaciones");
       tryStr("proceso_actividad_relacionada");
-      tryStr("sponsor");
-      tryStr("responsable_proceso");
       tryStr("articulo");
       tryStr("requisito");
       tryStr("sancion");
@@ -276,6 +315,17 @@ export async function POST(req: Request) {
       if (Object.keys(patch).length === 0) {
         notes.push(`${id}: IA no aplicó valores válidos tras validación`);
         continue;
+      }
+
+      if (typeof patch.gerencia_competente === "string" && patch.gerencia_competente.trim()) {
+        const v = patch.gerencia_competente.trim();
+        patch.gerencia_competente = v;
+        patch.sponsor = v;
+      }
+      if (typeof patch.area_competente === "string" && patch.area_competente.trim()) {
+        const v = patch.area_competente.trim();
+        patch.area_competente = v;
+        patch.responsable_proceso = v;
       }
 
       const { error: uErr } = await supabase.from("matriz_cumplimiento").update(patch).eq("id", id);

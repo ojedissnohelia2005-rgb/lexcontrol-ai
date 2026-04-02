@@ -49,21 +49,23 @@ export type NormativaMeta = {
 };
 
 export async function extractNormativaMetaGemini(input: { file_name: string; texto: string }): Promise<NormativaMeta> {
-  const head = sample(input.texto, 18_000);
+  const primeraPagina = sample(input.texto, 5_500);
   const prompt = [
     "Eres analista legal Ecuador 2026.",
-    "A partir del encabezado/primera página de un documento normativo, detecta el NOMBRE real de la norma (título oficial) y, si existe, la fecha de expedición/publicación.",
+    "El bloque de texto siguiente corresponde al INICIO del PDF (aprox. primera página).",
+    "Tu tarea: identificar el TÍTULO OFICIAL de la norma tal como aparece impreso en portada o primera página (no inventes otro nombre).",
+    "Si hay subtítulo o número de reglamento/resolución visible arriba, incorpóralo al título cuando forme parte del encabezado oficial.",
+    "Detecta también, si existe en esa zona, la fecha de expedición o publicación.",
     "Responde SOLO JSON con la forma:",
     '{"titulo_detectado":string|null,"fecha_normativa_iso":"YYYY-MM-DD"|null,"clasificacion_documento":"ley"|"reglamento"|"decreto"|"resolucion"|"otro"|null,"razon":"breve","confianza":0-1}',
     "Reglas:",
-    "- titulo_detectado: nombre oficial (primera línea o encabezado). Sin asteriscos ni markdown. Si no es claro, null.",
-    "- clasificacion_documento: ley (código/ley orgánica), reglamento (reglamento general/orgánico), decreto ejecutivo, resolución/ministerial, u otro según el documento.",
-    "- fecha_normativa_iso: solo si se identifica claramente una fecha; si no, null.",
-    "- Usa file_name solo como pista secundaria.",
+    "- titulo_detectado: copia el título como en el documento (sin markdown). Prioridad absoluta: primera página. El file_name solo es pista si el título no se lee.",
+    "- clasificacion_documento: ley (código/ley orgánica), reglamento, decreto ejecutivo, resolución/ministerial, u otro.",
+    "- fecha_normativa_iso: solo si se identifica claramente; si no, null.",
     "",
     `file_name=${input.file_name}`,
-    "TEXTO (inicio):",
-    head
+    "TEXTO (primera página aprox.):",
+    primeraPagina
   ].join("\n");
 
   let text = "";
@@ -232,14 +234,19 @@ export async function mapNegocioNormativaGemini(input: {
   const prompt = [
     "Eres analista de cumplimiento Ecuador 2026.",
     "Los documentos provienen de una BIBLIOTECA NORMATIVA COMPARTIDA (no están dedicados a un solo negocio).",
+    "0) A partir del bloque NEGOCIO, infiere en qué consiste la actividad (ej. empresa privada con trabajadores que comercializa GLP → dominios probables: laboral, tributario, comercio, seguridad/prevención, normativa sectorial si el texto la trata). Esa inferencia guía qué fragmentos del PDF son útiles para ítems de matriz.",
     "1) Para cada documento (por id), decide con rigor si APLICA al negocio descrito (sector, actividades, detalles) o no; motivo breve.",
+    "   Regla de competencia: (a) Penitenciario/PPL/hacinamiento/cárceles o exclusivo sistema financiero supervisado → NO aplica a empresa privada genérica; aplica=false y no extraigas de ese ámbito. (b) COIP / penal **económico**, **persona jurídica**, **responsabilidad de administradores o representantes** en delitos societarios → SÍ puede aplicar a empresas privadas; extrae ítems pertinentes.",
     "2) Solo para los que apliquen (o fragmentos relevantes), extrae items de matriz de cumplimiento como en extracción legal.",
+    "   gerencia_competente y area_competente: áreas corporativas plausibles para el negocio; no inventes «Gerencia de Derecho Penal» si la empresa no es del sector justicia/Estado.",
     "",
     "Salida SOLO JSON:",
-    '{"docs":[{"doc_id":"uuid","aplica":true|false,"motivo":"..."}],"items":[{"articulo","requisito","sancion","cita_textual","link_fuente_oficial","fuente_verificada_url","area_competente","gerencia_competente","impacto_economico","probabilidad_incumplimiento","tipo_norma","norma_nombre","fecha_publicacion","organismo_emisor","resumen_experto","campo_juridico","observaciones","proceso_actividad_relacionada","sponsor","responsable_proceso","obligacion_grupo_id","obligacion_grupo_etiqueta"}]}',
+    '{"docs":[{"doc_id":"uuid","aplica":true|false,"motivo":"..."}],"items":[{"articulo","requisito","sancion","cita_textual","link_fuente_oficial","fuente_verificada_url","area_competente","gerencia_competente","impacto_economico","probabilidad_incumplimiento","tipo_norma","norma_nombre","fecha_publicacion","organismo_emisor","resumen_experto","campo_juridico","observaciones","proceso_actividad_relacionada","sponsor","responsable_proceso","obligacion_grupo_id","obligacion_grupo_etiqueta","obligacion_resumen_consolidado"}]}',
     "items: solo requisitos accionables derivados de los docs que aplican; articulo puede ser Art. X o —.",
-    "obligacion_grupo_id: slug corto en inglés o español sin espacios (ej. obligaciones-tributarias-cumplimiento); mismo id para artículos que materialicen UNA misma obligación sustantiva (ej. plazo + forma de pago del mismo tributo).",
-    "obligacion_grupo_etiqueta: frase en español para humanos (ej. Cumplimiento de obligaciones tributarias — plazos y medios de pago).",
+    "obligacion_grupo_id: slug sin espacios; mismo id para artículos que materialicen UNA misma obligación sustantiva (ej. plazo + forma de pago tributario).",
+    "obligacion_grupo_etiqueta: frase en español (ej. Cumplimiento de obligaciones tributarias — plazos y medios de pago).",
+    "obligacion_resumen_consolidado: si hay grupo, un párrafo único que unifique el deber (ej. empieza con «La obligación consiste en…»); mismo texto en todos los ítems del grupo; requisito/cita_textual siguen siendo específicos por artículo.",
+    "sponsor y gerencia_competente: mismo texto; responsable_proceso y area_competente: mismo texto (gerencia vs jefatura/área).",
     "Devuelve minimo: docs (uno por cada DOC incluido) e items (puede ser []).",
     "Si un DOC no aplica: aplica=false y NO generes items de ese DOC.",
     "",

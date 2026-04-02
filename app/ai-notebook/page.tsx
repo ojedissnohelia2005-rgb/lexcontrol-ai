@@ -17,6 +17,8 @@ import type { ComparacionNormativa } from "@/types/domain";
 import { labelClasificacionDoc } from "@/lib/normativa-titles";
 import { fetchNormativaDocsForNegocio, type NormativaDocListRow } from "@/lib/normativa-docs-query";
 import { estimateBatchSeconds, SECONDS_PER_PDF_ESTIMATE } from "@/lib/pdf-remote";
+import { groupByObligacionGrupo } from "@/lib/obligacion-grupo";
+import { normalizeOrganizacion4 } from "@/lib/matriz-gerencia-jefatura";
 
 type NegocioMini = { id: string; nombre: string; sector: string | null; detalles_negocio: string | null };
 
@@ -109,6 +111,8 @@ export default function AiNotebookPage() {
   const [driveListError, setDriveListError] = useState<string | null>(null);
   const [driveServiceEmail, setDriveServiceEmail] = useState<string | null>(null);
   const [selectedDriveIds, setSelectedDriveIds] = useState<Set<string>>(new Set());
+
+  const previewGrupos = useMemo(() => groupByObligacionGrupo(items), [items]);
 
   const loadNormativaDocs = useCallback(async () => {
     if (!supabase || !negocioId) return;
@@ -236,12 +240,17 @@ export default function AiNotebookPage() {
     comparacion?: ComparacionNormativa;
     fuente_url?: string | null;
     storage_path?: string | null;
+    ingest_aviso?: string | null;
+    /** Devuelto por ingest (mismo valor que meta en /api/gemini/extract) */
+    items_omitidos_por_no_aplicables?: number;
+    meta?: { items_omitidos_por_no_aplicables?: number };
   };
 
   async function applyIngestSuccess(
     data: IngestApiPayload,
     displayName: string,
-    origen: "pdf_upload" | "pdf_url" | "pdf_drive"
+    origen: "pdf_upload" | "pdf_url" | "pdf_drive",
+    opts?: { appendMapMsg?: boolean }
   ) {
     if (!supabase || !negocioId) return;
     const extracted = data.items ?? [];
@@ -257,6 +266,7 @@ export default function AiNotebookPage() {
       const multa = estimateUsdFromSanction(it.sancion);
       const score = computePriorityScore(it.impacto_economico, it.probabilidad_incumplimiento);
       const prioridad = classifyPrioridad({ sancion: it.sancion, multa_estimada_usd: multa, priorityScore: score });
+      const org = normalizeOrganizacion4(it);
       return {
         negocio_id: negocioId,
         tipo_norma: it.tipo_norma ?? null,
@@ -267,16 +277,16 @@ export default function AiNotebookPage() {
         campo_juridico: it.campo_juridico ?? null,
         observaciones: it.observaciones ?? null,
         proceso_actividad_relacionada: it.proceso_actividad_relacionada ?? null,
-        sponsor: it.sponsor ?? null,
-        responsable_proceso: it.responsable_proceso ?? null,
+        sponsor: org.sponsor,
+        responsable_proceso: org.responsable_proceso,
         articulo: it.articulo || "—",
         requisito: it.requisito,
         sancion: it.sancion,
         cita_textual: it.cita_textual,
         link_fuente_oficial: it.link_fuente_oficial,
         fuente_verificada_url: it.fuente_verificada_url ?? fuenteUrl,
-        gerencia_competente: it.gerencia_competente,
-        area_competente: it.area_competente,
+        gerencia_competente: org.gerencia_competente,
+        area_competente: org.area_competente,
         multa_estimada_usd: multa,
         impacto_economico: it.impacto_economico,
         probabilidad_incumplimiento: it.probabilidad_incumplimiento,
@@ -287,7 +297,10 @@ export default function AiNotebookPage() {
           origen,
           comparacion: data.comparacion ?? null,
           obligacion_grupo_id: it.obligacion_grupo_id ?? null,
-          obligacion_grupo_etiqueta: it.obligacion_grupo_etiqueta ?? null
+          obligacion_grupo_etiqueta: it.obligacion_grupo_etiqueta ?? null,
+          obligacion_resumen_consolidado: it.obligacion_resumen_consolidado ?? null,
+          aplica_a_negocio_descrito: it.aplica_a_negocio_descrito ?? true,
+          motivo_aplicabilidad: it.motivo_aplicabilidad ?? null
         }
       };
     });
@@ -312,6 +325,25 @@ export default function AiNotebookPage() {
     });
 
     await loadNormativaDocs();
+
+    const aviso = typeof data.ingest_aviso === "string" ? data.ingest_aviso.trim() : "";
+    const omitidos =
+      typeof data.items_omitidos_por_no_aplicables === "number"
+        ? data.items_omitidos_por_no_aplicables
+        : data.meta?.items_omitidos_por_no_aplicables;
+    const lineParts = [
+      extracted.length > 0
+        ? `Última extracción (${displayName}): ${extracted.length} ítem(s) aplicable(s) al negocio.`
+        : `Última extracción (${displayName}): ningún ítem aplicable al modelo de negocio activo.`,
+      aviso || null,
+      typeof omitidos === "number" && omitidos > 0 && !aviso
+        ? `${omitidos} requisito(s) descartados por aplicabilidad.`
+        : null
+    ].filter(Boolean);
+    const line = lineParts.join(" ");
+    setMapMsg((prev) =>
+      opts?.appendMapMsg && prev?.trim() ? `${prev.trim()}\n${line}` : line
+    );
   }
 
   function parseIngestJson(rawText: string, res: Response): IngestApiPayload {
@@ -448,10 +480,12 @@ export default function AiNotebookPage() {
         });
         const rawText = await res.text();
         const data = parseIngestJson(rawText, res);
-        await applyIngestSuccess(data, label, "pdf_drive");
+        await applyIngestSuccess(data, label, "pdf_drive", { appendMapMsg: i > 0 });
       }
       setSelectedDriveIds(new Set());
-      setMapMsg(`Listo: ${ids.length} archivo(s) importados desde Drive (biblioteca + propuestas).`);
+      setMapMsg((prev) =>
+        `Listo: ${ids.length} archivo(s) importados desde Drive (biblioteca + propuestas).${prev?.trim() ? `\n${prev.trim()}` : ""}`
+      );
     } catch (e: unknown) {
       setError(formatUiError(e));
     } finally {
@@ -503,10 +537,12 @@ export default function AiNotebookPage() {
         const rawText = await res.text();
         const data = parseIngestJson(rawText, res);
         const label = url.length > 72 ? `${url.slice(0, 70)}…` : url;
-        await applyIngestSuccess(data, label, "pdf_url");
+        await applyIngestSuccess(data, label, "pdf_url", { appendMapMsg: i > 0 });
       }
       setUrlLines("");
-      setMapMsg(`Listo: ${lines.length} PDF(s) desde URL indexados en la biblioteca y propuestas generadas.`);
+      setMapMsg((prev) =>
+        `Listo: ${lines.length} PDF(s) desde URL indexados en la biblioteca y propuestas generadas.${prev?.trim() ? `\n${prev.trim()}` : ""}`
+      );
     } catch (e: unknown) {
       setError(formatUiError(e));
     } finally {
@@ -893,19 +929,51 @@ export default function AiNotebookPage() {
             </div>
           ) : null}
           <div className="mt-4 space-y-3">
-            {items.map((it, idx) => (
-              <div key={idx} className="rounded-2xl bg-cream p-4 ring-1 ring-borderSoft">
-                <div className="text-sm font-semibold">{it.articulo || "—"}</div>
-                <div className="mt-1 text-sm">{it.requisito}</div>
-                <div className="mt-2 text-xs text-charcoal/60">{it.cita_textual ?? "—"}</div>
-                <div className="mt-2 text-xs text-charcoal/70">Sanción: {it.sancion ?? "—"}</div>
-                {it.fuente_verificada_url ? (
-                  <a className="mt-2 inline-block text-xs text-sidebarRose underline" href={it.fuente_verificada_url} target="_blank" rel="noreferrer">
-                    Fuente verificada
-                  </a>
-                ) : null}
-              </div>
-            ))}
+            {previewGrupos.map(({ key, list }) => {
+              const isG = list.length > 1;
+              const etiqueta = list[0]?.obligacion_grupo_etiqueta?.trim();
+              const consolidado =
+                list.map((x) => x.obligacion_resumen_consolidado?.trim()).find((s) => s && s.length >= 15) ?? null;
+              const card = (it: GeminiExtractionItem, iKey: string) => (
+                <div key={iKey} className="rounded-2xl bg-cream p-4 ring-1 ring-borderSoft">
+                  <div className="text-sm font-semibold">{it.articulo || "—"}</div>
+                  <div className="mt-1 text-sm">{it.requisito}</div>
+                  <div className="mt-2 text-xs text-charcoal/60">{it.cita_textual ?? "—"}</div>
+                  <div className="mt-2 text-xs text-charcoal/70">Sanción: {it.sancion ?? "—"}</div>
+                  {it.fuente_verificada_url ? (
+                    <a
+                      className="mt-2 inline-block text-xs text-sidebarRose underline"
+                      href={it.fuente_verificada_url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Fuente verificada
+                    </a>
+                  ) : null}
+                </div>
+              );
+              if (!isG) return <div key={key}>{card(list[0]!, key)}</div>;
+              return (
+                <div key={key} className="rounded-2xl border border-sidebarRose/20 bg-cream/50 p-4 ring-1 ring-borderSoft">
+                  <div className="text-xs font-semibold text-sidebarRose">Obligación agrupada · {list.length} artículos</div>
+                  {etiqueta ? <div className="mt-1 text-xs text-charcoal/70">{etiqueta}</div> : null}
+                  {consolidado ? (
+                    <div className="mt-3 rounded-xl bg-white p-3 text-sm leading-relaxed text-charcoal ring-1 ring-borderSoft">
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-charcoal/45">Resumen unificado</div>
+                      <p className="mt-1">{consolidado}</p>
+                    </div>
+                  ) : (
+                    <div className="mt-2 text-xs text-charcoal/55">Abre el desglose para ver el detalle por artículo.</div>
+                  )}
+                  <details className="mt-3 rounded-xl ring-1 ring-borderSoft bg-white/70">
+                    <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-charcoal marker:content-none [&::-webkit-details-marker]:hidden">
+                      Desglose por artículo ({list.length})
+                    </summary>
+                    <div className="space-y-3 border-t border-borderSoft p-3">{list.map((it, j) => card(it, `${key}-${j}`))}</div>
+                  </details>
+                </div>
+              );
+            })}
             {items.length === 0 ? (
               <div className="rounded-xl bg-cream px-3 py-3 text-sm text-charcoal/70 ring-1 ring-borderSoft">
                 {fuente === "subir" ? "Sube un PDF para ver la extracción." : "Elige documentos en memoria y ejecuta el mapeo; las sugerencias irán directo a Propuestas."}

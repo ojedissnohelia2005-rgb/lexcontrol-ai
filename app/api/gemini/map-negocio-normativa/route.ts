@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { mapNegocioNormativaGemini } from "@/lib/gemini-normativa";
+import { propagateObligacionResumenConsolidado } from "@/lib/obligacion-grupo";
+import { normalizeOrganizacion4 } from "@/lib/matriz-gerencia-jefatura";
+import { itemDebeDescartarsePorHeuristica } from "@/lib/extract-applicability-heuristic";
 import { estimateUsdFromSanction, classifyPrioridad, computePriorityScore } from "@/lib/finance";
 import type { GeminiExtractionItem } from "@/app/api/gemini/extract/route";
 
@@ -50,7 +53,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const { docs: aplicacionIA, items } = await mapNegocioNormativaGemini({
+    const { docs: aplicacionIA, items: itemsRaw } = await mapNegocioNormativaGemini({
       negocio: {
         nombre: biz.nombre,
         sector: biz.sector,
@@ -66,6 +69,44 @@ export async function POST(req: Request) {
       }))
     });
 
+    const contexto_rubro =
+      [
+        (biz as { regulacion_actividades_especiales?: string | null }).regulacion_actividades_especiales
+          ? `Actividades reguladas: ${(biz as { regulacion_actividades_especiales?: string }).regulacion_actividades_especiales}`
+          : "",
+        (biz as { normativa_actualizar_nota?: string | null }).normativa_actualizar_nota
+          ? `Normativa a actualizar (nota): ${(biz as { normativa_actualizar_nota?: string }).normativa_actualizar_nota}`
+          : "",
+        (biz as { normativa_actualizar_urls?: string | null }).normativa_actualizar_urls
+          ? `Enlaces de referencia (usuario): ${(biz as { normativa_actualizar_urls?: string }).normativa_actualizar_urls}`
+          : ""
+      ]
+        .filter(Boolean)
+        .join("\n") || null;
+
+    const perfilNegocioMap = {
+      nombre: biz.nombre,
+      sector: biz.sector,
+      detalles: biz.detalles_negocio,
+      contexto_rubro: contexto_rubro
+    };
+    const tienePerfilNegocio = Boolean(
+      perfilNegocioMap.nombre?.trim() ||
+        perfilNegocioMap.sector?.trim() ||
+        perfilNegocioMap.detalles?.trim() ||
+        perfilNegocioMap.contexto_rubro?.trim()
+    );
+
+    let items = [...itemsRaw];
+    const omitidosHeuristica = tienePerfilNegocio
+      ? items.filter((it) => itemDebeDescartarsePorHeuristica(it, perfilNegocioMap)).length
+      : 0;
+    if (tienePerfilNegocio) {
+      items = items.filter((it) => !itemDebeDescartarsePorHeuristica(it, perfilNegocioMap));
+    }
+    propagateObligacionResumenConsolidado(items);
+    items = items.map((it) => ({ ...it, ...normalizeOrganizacion4(it) }));
+
     const aplicacion = [
       ...aplicacionIA,
       ...docsSinTexto.map((d) => ({ doc_id: d.id, aplica: false, motivo: "Sin texto extraído para analizar." }))
@@ -78,6 +119,7 @@ export async function POST(req: Request) {
       const multa = estimateUsdFromSanction(it.sancion);
       const score = computePriorityScore(it.impacto_economico, it.probabilidad_incumplimiento);
       const prioridad = classifyPrioridad({ sancion: it.sancion, multa_estimada_usd: multa, priorityScore: score });
+      const org = normalizeOrganizacion4(it);
       return {
         negocio_id: body.negocio_id,
         tipo_norma: (it as any).tipo_norma ?? null,
@@ -88,16 +130,16 @@ export async function POST(req: Request) {
         campo_juridico: (it as any).campo_juridico ?? null,
         observaciones: (it as any).observaciones ?? null,
         proceso_actividad_relacionada: (it as any).proceso_actividad_relacionada ?? null,
-        sponsor: (it as any).sponsor ?? null,
-        responsable_proceso: (it as any).responsable_proceso ?? null,
+        sponsor: org.sponsor,
+        responsable_proceso: org.responsable_proceso,
         articulo: it.articulo || "—",
         requisito: it.requisito,
         sancion: it.sancion,
         cita_textual: it.cita_textual,
         link_fuente_oficial: it.link_fuente_oficial,
         fuente_verificada_url: it.fuente_verificada_url,
-        gerencia_competente: it.gerencia_competente,
-        area_competente: it.area_competente,
+        gerencia_competente: org.gerencia_competente,
+        area_competente: org.area_competente,
         multa_estimada_usd: multa,
         impacto_economico: it.impacto_economico,
         probabilidad_incumplimiento: it.probabilidad_incumplimiento,
@@ -110,7 +152,9 @@ export async function POST(req: Request) {
           aplicacion,
           generado_at: new Date().toISOString(),
           obligacion_grupo_id: (it as { obligacion_grupo_id?: string | null }).obligacion_grupo_id ?? null,
-          obligacion_grupo_etiqueta: (it as { obligacion_grupo_etiqueta?: string | null }).obligacion_grupo_etiqueta ?? null
+          obligacion_grupo_etiqueta: (it as { obligacion_grupo_etiqueta?: string | null }).obligacion_grupo_etiqueta ?? null,
+          obligacion_resumen_consolidado:
+            (it as { obligacion_resumen_consolidado?: string | null }).obligacion_resumen_consolidado ?? null
         }
       };
     };
@@ -135,10 +179,16 @@ export async function POST(req: Request) {
       }
     });
 
-    const warning =
-      docsSinTexto.length > 0
-        ? `Nota: ${docsSinTexto.length} PDF(s) no tenían texto extraído y se marcaron como "No aplica".`
-        : null;
+    const warningParts: string[] = [];
+    if (docsSinTexto.length > 0) {
+      warningParts.push(`Nota: ${docsSinTexto.length} PDF(s) no tenían texto extraído y se marcaron como "No aplica".`);
+    }
+    if (omitidosHeuristica > 0) {
+      warningParts.push(
+        `${omitidosHeuristica} sugerencia(s) omitida(s): competencia propia de Estado/penitenciario o sistema financiero supervisado, no alineadas al perfil del negocio.`
+      );
+    }
+    const warning = warningParts.length > 0 ? warningParts.join(" ") : null;
     return NextResponse.json({ ok: true, aplicacion, items_generados: payload.length, warning });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "Error";

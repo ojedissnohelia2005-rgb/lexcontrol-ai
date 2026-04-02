@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { organizacionParaAprobarPropuesta } from "@/lib/matriz-gerencia-jefatura";
 
 const BodySchema = z.object({
   propuesta_id: z.string().uuid()
@@ -40,6 +41,15 @@ export async function POST(req: Request) {
     const normativaDocId = (propuesta as { normativa_doc_id?: string | null }).normativa_doc_id ?? null;
     const extraCols = propuesta as any;
 
+    const org = organizacionParaAprobarPropuesta({
+      asignacion_gerencia: gUser || null,
+      asignacion_jefatura: jUser || null,
+      gerencia_competente: propuesta.gerencia_competente,
+      area_competente: propuesta.area_competente,
+      sponsor: extraCols.sponsor,
+      responsable_proceso: extraCols.responsable_proceso
+    });
+
     // Insert into matriz_cumplimiento
     const insertPayload = {
       negocio_id: propuesta.negocio_id,
@@ -51,8 +61,8 @@ export async function POST(req: Request) {
       campo_juridico: extraCols.campo_juridico ?? null,
       observaciones: extraCols.observaciones ?? null,
       proceso_actividad_relacionada: extraCols.proceso_actividad_relacionada ?? null,
-      sponsor: extraCols.sponsor ?? null,
-      responsable_proceso: extraCols.responsable_proceso ?? null,
+      sponsor: org.sponsor,
+      responsable_proceso: org.responsable_proceso,
       articulo: propuesta.articulo,
       requisito: propuesta.requisito,
       sancion: propuesta.sancion,
@@ -65,8 +75,8 @@ export async function POST(req: Request) {
       cita_textual: propuesta.cita_textual,
       link_fuente_oficial: propuesta.link_fuente_oficial,
       fuente_verificada_url: propuesta.fuente_verificada_url,
-      gerencia_competente: gUser || propuesta.gerencia_competente,
-      area_competente: jUser || propuesta.area_competente,
+      gerencia_competente: org.gerencia_competente,
+      area_competente: org.area_competente,
       supervisor_legal_id: supId,
       normativa_doc_id: normativaDocId,
       created_by: userData.user.id
