@@ -34,6 +34,52 @@ function formatUiError(e: unknown) {
   return raw;
 }
 
+function IconLinkChain({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden>
+      <path
+        d="M10 13a5 5 0 0 1 0-7l1-1a5 5 0 0 1 7 7l-1 1M14 11a5 5 0 0 1 0 7l-1 1a5 5 0 1 1-7-7l1-1"
+        strokeWidth="1.65"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function IconDriveCloud({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden>
+      <path
+        d="M7 18h11a3.5 3.5 0 0 0 0-7h-.5A5 5 0 0 0 7 8.5v0A4 4 0 0 0 7 18Z"
+        strokeWidth="1.65"
+        strokeLinejoin="round"
+      />
+      <path d="M12 11v4m-2-2h4" strokeWidth="1.65" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconFolderMini({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden>
+      <path
+        d="M4 6a2 2 0 0 1 2-2h3.2a2 2 0 0 1 1.6.8L12 6h6a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6Z"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconUserBadge({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden>
+      <circle cx="12" cy="9" r="3" strokeWidth="1.5" />
+      <path d="M6 19v0a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export default function AiNotebookPage() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [negocioId, setNegocioId] = useState<string | null>(null);
@@ -658,71 +704,114 @@ export default function AiNotebookPage() {
                 className="block w-full text-sm"
               />
 
-              <div className="rounded-xl bg-cream px-3 py-3 ring-1 ring-borderSoft">
-                <div className="text-sm font-medium">Desde URL (Google Drive o PDF público)</div>
-                <div className="mt-1 text-xs text-charcoal/60">
-                  <strong>Carpetas de Drive:</strong> la app no puede abrir una carpeta entera. Abre la carpeta, comparte cada PDF (“Cualquiera con el enlace”)
-                  y pega aquí <strong>un enlace por línea</strong> (mismo lote que subir varios archivos). También sirven URLs directas a .pdf.
+              <div className="rounded-2xl border border-borderSoft bg-gradient-to-b from-white to-cream/90 p-4 shadow-sm">
+                <div className="flex gap-3">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-charcoal/[0.07] text-charcoal">
+                    <IconLinkChain className="h-6 w-6" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-semibold text-charcoal">Desde URL (Drive o PDF público)</div>
+                    <p className="mt-1 text-xs leading-relaxed text-charcoal/65">
+                      <strong className="text-charcoal/80">Carpetas:</strong> no se abren enteras. Comparte cada PDF como «Cualquiera con el enlace» y pega{" "}
+                      <strong>un enlace por línea</strong>. Válidas también URLs directas a <code className="rounded bg-white/90 px-1">.pdf</code>.
+                    </p>
+                  </div>
                 </div>
                 <textarea
                   value={urlLines}
                   onChange={(e) => setUrlLines(e.target.value)}
                   disabled={busy || !supabase}
                   placeholder={"https://drive.google.com/file/d/XXXX/view\nhttps://…otro.pdf"}
-                  className="mt-2 min-h-[88px] w-full rounded-lg bg-white px-3 py-2 text-xs ring-1 ring-borderSoft"
+                  className="mt-3 min-h-[92px] w-full rounded-xl bg-white px-3 py-2.5 text-xs ring-1 ring-borderSoft focus:outline-none focus:ring-2 focus:ring-sidebarRose/30"
                 />
-                <div className="mt-2 text-[11px] text-charcoal/55">
-                  Estimación al pulsar el botón: ~{SECONDS_PER_PDF_ESTIMATE}s × número de líneas (solo referencia).
+                <div className="mt-2 flex items-center gap-1.5 text-[11px] text-charcoal/50">
+                  <span className="inline-block h-1 w-1 rounded-full bg-charcoal/35" aria-hidden />
+                  ~{SECONDS_PER_PDF_ESTIMATE}s × número de líneas (referencia)
                 </div>
                 <button
                   type="button"
                   disabled={busy || !supabase || !negocioId}
                   onClick={() => void procesarUrlsPdf()}
-                  className="mt-2 w-full rounded-xl bg-charcoal px-4 py-2 text-sm font-medium text-cream hover:bg-charcoal/90 disabled:opacity-50"
+                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-charcoal px-4 py-2.5 text-sm font-medium text-cream hover:bg-charcoal/90 disabled:opacity-50"
                 >
+                  <IconLinkChain className="h-4 w-4 opacity-90" />
                   {busy ? "Procesando URLs…" : "Descargar e indexar URLs"}
                 </button>
               </div>
 
-              <div className="rounded-xl bg-cream px-3 py-3 ring-1 ring-borderSoft">
-                <div className="text-sm font-medium">Desde Drive (cuenta de servicio)</div>
-                <div className="mt-1 text-xs text-charcoal/60">
-                  Lista PDFs y documentos de Google en la carpeta{" "}
-                  <code className="rounded bg-white/80 px-1 text-[10px]">{LEGAL_DRIVE_FOLDER_ID}</code> e impórtalos con
-                  la misma canalización que un PDF subido. Requiere clave privada en el servidor y carpeta compartida con{" "}
-                  {driveServiceEmail ?? GOOGLE_DRIVE_SERVICE_ACCOUNT_EMAIL_DEFAULT}.
+              <div className="rounded-2xl border border-borderSoft bg-gradient-to-b from-white to-cream/90 p-4 shadow-sm">
+                <div className="flex gap-3">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-sidebarRose/12 text-sidebarRose">
+                    <IconDriveCloud className="h-6 w-6" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-semibold text-charcoal">Google Drive (cuenta de servicio)</div>
+                    <p className="mt-1 text-xs leading-relaxed text-charcoal/65">
+                      Listado e importación con la misma IA que al subir un PDF. Sin copiar enlaces públicos.
+                    </p>
+                  </div>
                 </div>
+                <ul className="mt-3 space-y-2 rounded-xl bg-white/70 px-3 py-2.5 text-[11px] text-charcoal/70 ring-1 ring-borderSoft/80">
+                  <li className="flex gap-2">
+                    <IconFolderMini className="mt-0.5 h-4 w-4 shrink-0 text-charcoal/45" />
+                    <span>
+                      Carpeta por defecto:{" "}
+                      <code className="rounded bg-cream px-1.5 py-0.5 text-[10px] text-charcoal/90">{LEGAL_DRIVE_FOLDER_ID}</code> ·{" "}
+                      <a className="text-sidebarRose underline" href={LEGAL_DRIVE_FOLDER_URL} target="_blank" rel="noreferrer">
+                        Abrir en Drive
+                      </a>
+                    </span>
+                  </li>
+                  <li className="flex gap-2">
+                    <IconUserBadge className="mt-0.5 h-4 w-4 shrink-0 text-charcoal/45" />
+                    <span>
+                      Comparte la carpeta con{" "}
+                      <code className="break-all rounded bg-cream px-1.5 py-0.5 text-[10px] text-charcoal/90">
+                        {driveServiceEmail ?? GOOGLE_DRIVE_SERVICE_ACCOUNT_EMAIL_DEFAULT}
+                      </code>
+                    </span>
+                  </li>
+                </ul>
                 <button
                   type="button"
                   disabled={driveListBusy || !supabase}
                   onClick={() => void cargarListaDrive()}
-                  className="mt-2 w-full rounded-xl bg-white px-4 py-2 text-sm font-medium text-charcoal ring-1 ring-borderSoft hover:bg-cream/80 disabled:opacity-50"
+                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-borderSoft bg-white px-4 py-2.5 text-sm font-medium text-charcoal shadow-sm hover:bg-cream/60 disabled:opacity-50"
                 >
+                  <IconDriveCloud className="h-4 w-4 text-sidebarRose" />
                   {driveListBusy ? "Consultando Drive…" : "Cargar lista desde Drive"}
                 </button>
                 {driveConfigured === false ? (
-                  <div className="mt-2 text-[11px] text-amber-800">
-                    Drive no está configurado en el servidor. {driveListError ?? "Añade GOOGLE_DRIVE_PRIVATE_KEY."}
+                  <div
+                    className="mt-3 rounded-xl border border-sky-200/80 bg-sky-50/90 px-3 py-2.5 text-xs leading-snug text-sky-950"
+                    role="status"
+                  >
+                    <span className="font-medium text-sky-900">Servidor sin clave de Drive.</span>{" "}
+                    {driveListError ??
+                      "Añade GOOGLE_DRIVE_PRIVATE_KEY en .env.local (local) o en variables de Vercel (producción)."}
                   </div>
                 ) : null}
                 {driveConfigured === true && driveListError ? (
-                  <div className="mt-2 text-[11px] text-red-700">{driveListError}</div>
+                  <div className="mt-3 rounded-xl border border-red-200 bg-red-50/90 px-3 py-2 text-[11px] leading-snug text-red-900">
+                    {driveListError}
+                  </div>
                 ) : null}
                 {driveFiles.length > 0 ? (
-                  <div className="mt-3 max-h-48 space-y-1.5 overflow-y-auto rounded-lg bg-white/90 p-2 ring-1 ring-borderSoft">
+                  <div className="mt-3 max-h-52 space-y-1 overflow-y-auto rounded-xl bg-white p-2 ring-1 ring-borderSoft">
                     {driveFiles.map((f) => (
                       <label
                         key={f.id}
-                        className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1 text-xs hover:bg-cream/80"
+                        className="flex cursor-pointer items-start gap-2.5 rounded-lg px-2 py-2 text-xs hover:bg-cream/90"
                       >
                         <input
                           type="checkbox"
+                          className="mt-1"
                           checked={selectedDriveIds.has(f.id)}
                           onChange={() => toggleDriveFile(f.id)}
                         />
-                        <span className="leading-snug">
+                        <span className="min-w-0 leading-snug">
                           <span className="font-medium text-charcoal">{f.name}</span>
-                          <span className="block text-[10px] text-charcoal/55">
+                          <span className="mt-0.5 block text-[10px] text-charcoal/50">
                             {f.mimeType === "application/vnd.google-apps.document" ? "Google Doc → PDF" : "PDF"} ·{" "}
                             {f.modifiedTime ? new Date(f.modifiedTime).toLocaleString() : "—"}
                           </span>
@@ -732,15 +821,18 @@ export default function AiNotebookPage() {
                   </div>
                 ) : null}
                 {driveConfigured === true && !driveListBusy && !driveListError && driveFiles.length === 0 ? (
-                  <div className="mt-2 text-[11px] text-charcoal/55">No hay PDFs ni Google Docs en esa carpeta.</div>
+                  <div className="mt-3 rounded-lg bg-charcoal/[0.04] px-3 py-2 text-center text-[11px] text-charcoal/55">
+                    No hay PDFs ni Google Docs en esa carpeta.
+                  </div>
                 ) : null}
                 <button
                   type="button"
                   disabled={busy || !supabase || !negocioId || selectedDriveIds.size === 0 || driveFiles.length === 0}
                   onClick={() => void importarSeleccionadosDrive()}
-                  className="mt-2 w-full rounded-xl bg-sidebarRose px-4 py-2 text-sm font-medium text-cream hover:opacity-90 disabled:opacity-50"
+                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-sidebarRose px-4 py-2.5 text-sm font-medium text-cream hover:opacity-95 disabled:opacity-50"
                 >
-                  {busy ? "Importando desde Drive…" : "Importar seleccionados desde Drive"}
+                  <IconDriveCloud className="h-4 w-4 text-cream/95" />
+                  {busy ? "Importando desde Drive…" : "Importar seleccionados"}
                 </button>
               </div>
 
