@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { generateAiText } from "@/lib/ai";
 import { classifyPrioridad, computePriorityScore, estimateUsdFromSanction } from "@/lib/finance";
+import { coerceImpactoEconomico, coerceProbabilidadIncumplimiento } from "@/lib/coerce-impacto-probabilidad";
 import { MENSAJE_SIN_NORMATIVA_EN_BASE } from "@/lib/matrix-ai-messages";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -69,14 +70,17 @@ function coerceAiNumericFields(o: Record<string, unknown>) {
     if (Number.isFinite(n)) o.multa_estimada_usd = n;
     else delete o.multa_estimada_usd;
   }
-  for (const key of ["impacto_economico", "probabilidad_incumplimiento"] as const) {
-    const v = o[key];
-    if (v == null) continue;
-    if (typeof v === "string" && v.trim()) {
-      const n = Math.round(Number(v.trim().replace(",", ".")));
-      if (Number.isFinite(n)) o[key] = n;
-      else delete o[key];
-    }
+  const impRaw = o.impacto_economico;
+  const cImp = coerceImpactoEconomico(impRaw);
+  if (impRaw != null) {
+    if (cImp != null) o.impacto_economico = cImp;
+    else delete o.impacto_economico;
+  }
+  const probRaw = o.probabilidad_incumplimiento;
+  const cProb = coerceProbabilidadIncumplimiento(probRaw);
+  if (probRaw != null) {
+    if (cProb != null) o.probabilidad_incumplimiento = cProb;
+    else delete o.probabilidad_incumplimiento;
   }
   const pr = o.prioridad;
   if (typeof pr === "string" && pr.trim()) {

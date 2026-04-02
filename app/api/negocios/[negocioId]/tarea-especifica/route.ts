@@ -4,6 +4,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { GeminiExtractionItem } from "@/app/api/gemini/extract/route";
 import { generateAiText } from "@/lib/ai";
 import { classifyPrioridad, computePriorityScore, estimateUsdFromSanction } from "@/lib/finance";
+import { coerceImpactoEconomico, coerceProbabilidadIncumplimiento } from "@/lib/coerce-impacto-probabilidad";
 import { normalizeOrganizacion4 } from "@/lib/matriz-gerencia-jefatura";
 
 type RouteCtx = { params: Promise<{ negocioId: string }> };
@@ -127,8 +128,10 @@ export async function POST(req: Request, ctx: RouteCtx) {
     }
 
     const payload = items.map((it) => {
+      const impacto = coerceImpactoEconomico(it.impacto_economico as unknown);
+      const prob = coerceProbabilidadIncumplimiento(it.probabilidad_incumplimiento as unknown);
       const multa = estimateUsdFromSanction(it.sancion);
-      const score = computePriorityScore(it.impacto_economico, it.probabilidad_incumplimiento);
+      const score = computePriorityScore(impacto, prob);
       const prioridad = classifyPrioridad({ sancion: it.sancion, multa_estimada_usd: multa, priorityScore: score });
       const respaldado = it.respaldado_en_biblioteca === true && hayDocs;
       let observaciones = (it.observaciones ?? "").trim();
@@ -157,8 +160,8 @@ export async function POST(req: Request, ctx: RouteCtx) {
         gerencia_competente: org.gerencia_competente,
         area_competente: org.area_competente,
         multa_estimada_usd: multa,
-        impacto_economico: it.impacto_economico,
-        probabilidad_incumplimiento: it.probabilidad_incumplimiento,
+        impacto_economico: impacto,
+        probabilidad_incumplimiento: prob,
         prioridad,
         actividad_id: body.actividad_id ?? null,
         estado: "pendiente" as const,

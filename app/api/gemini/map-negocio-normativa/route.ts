@@ -5,6 +5,7 @@ import { mapNegocioNormativaGemini } from "@/lib/gemini-normativa";
 import { propagateObligacionResumenConsolidado } from "@/lib/obligacion-grupo";
 import { normalizeOrganizacion4 } from "@/lib/matriz-gerencia-jefatura";
 import { itemDebeDescartarsePorHeuristica } from "@/lib/extract-applicability-heuristic";
+import { coerceImpactoEconomico, coerceProbabilidadIncumplimiento } from "@/lib/coerce-impacto-probabilidad";
 import { estimateUsdFromSanction, classifyPrioridad, computePriorityScore } from "@/lib/finance";
 import type { GeminiExtractionItem } from "@/app/api/gemini/extract/route";
 
@@ -116,8 +117,10 @@ export async function POST(req: Request) {
     const primeraAplica = [...aplicanIds][0] ?? null;
 
     const toRow = (it: GeminiExtractionItem) => {
+      const impacto = coerceImpactoEconomico((it as { impacto_economico?: unknown }).impacto_economico);
+      const prob = coerceProbabilidadIncumplimiento((it as { probabilidad_incumplimiento?: unknown }).probabilidad_incumplimiento);
       const multa = estimateUsdFromSanction(it.sancion);
-      const score = computePriorityScore(it.impacto_economico, it.probabilidad_incumplimiento);
+      const score = computePriorityScore(impacto, prob);
       const prioridad = classifyPrioridad({ sancion: it.sancion, multa_estimada_usd: multa, priorityScore: score });
       const org = normalizeOrganizacion4(it);
       return {
@@ -141,8 +144,8 @@ export async function POST(req: Request) {
         gerencia_competente: org.gerencia_competente,
         area_competente: org.area_competente,
         multa_estimada_usd: multa,
-        impacto_economico: it.impacto_economico,
-        probabilidad_incumplimiento: it.probabilidad_incumplimiento,
+        impacto_economico: impacto,
+        probabilidad_incumplimiento: prob,
         prioridad,
         estado: "pendiente" as const,
         normativa_doc_id: primeraAplica,

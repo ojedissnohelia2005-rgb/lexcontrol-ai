@@ -285,6 +285,7 @@ export async function mapNegocioNormativaGemini(input: {
     "obligacion_grupo_etiqueta: frase en español (ej. Cumplimiento de obligaciones tributarias — plazos y medios de pago).",
     "obligacion_resumen_consolidado: si hay grupo, un párrafo único que unifique el deber (ej. empieza con «La obligación consiste en…»); mismo texto en todos los ítems del grupo; requisito/cita_textual siguen siendo específicos por artículo.",
     "sponsor y gerencia_competente: mismo texto; responsable_proceso y area_competente: mismo texto (gerencia vs jefatura/área).",
+    "impacto_economico: entero JSON 1-10 (solo número). probabilidad_incumplimiento: entero JSON 1-5 (solo número). Prohibido usar texto o frases en esos campos; las explicaciones van en observaciones o resumen_experto.",
     "Devuelve minimo: docs (uno por cada DOC incluido) e items (puede ser []).",
     "Si un DOC no aplica: aplica=false y NO generes items de ese DOC.",
     "FORMATO CRÍTICO: responde SOLO con un objeto JSON válido. No uses markdown, no uses ``` ni bloques de código, ni texto antes o después del JSON.",
