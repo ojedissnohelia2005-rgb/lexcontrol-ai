@@ -38,7 +38,7 @@ export async function POST(req: Request) {
     if (!storage_path) {
       const admin = createSupabaseAdminClient();
       const safeName = file.name.replace(/[^\w.\- ]+/g, "_");
-      storage_path = `normativa/${negocio_id}/${Date.now()}-${safeName}`;
+      storage_path = `normativa/global/${Date.now()}-${safeName}`;
       const { error: upErr } = await admin.storage.from("evidencias-legales").upload(storage_path, buffer, {
         contentType: file.type || "application/pdf",
         upsert: true,
@@ -71,7 +71,7 @@ export async function POST(req: Request) {
     const tituloDetectado = meta.titulo_detectado ?? file.name;
 
     const rowBase = {
-      negocio_id,
+      negocio_id: null as string | null,
       titulo: tituloDetectado,
       fuente_url: fuente_url,
       storage_path: storage_path,
@@ -104,7 +104,7 @@ export async function POST(req: Request) {
 
     /** Misma norma (título normalizado IA): conserva la carga más reciente; alerta en Notificaciones para revisión. */
     try {
-      const { data: allNorm } = await supabase.from("normativa_docs").select("id,titulo,created_at").eq("negocio_id", negocio_id);
+      const { data: allNorm } = await supabase.from("normativa_docs").select("id,titulo,created_at").is("negocio_id", null);
 
       const groups = new Map<string, { id: string; created_at: string; titulo: string | null }[]>();
       for (const row of allNorm ?? []) {
@@ -139,7 +139,7 @@ export async function POST(req: Request) {
     const { data: siblings } = await supabase
       .from("normativa_docs")
       .select("id,titulo,texto_extraido,sha256,fecha_normativa")
-      .eq("negocio_id", negocio_id)
+      .is("negocio_id", null)
       .neq("id", inserted.id);
 
     const existentes = siblings ?? [];

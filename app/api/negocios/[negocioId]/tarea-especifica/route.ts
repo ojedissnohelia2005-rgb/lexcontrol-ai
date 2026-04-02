@@ -31,7 +31,7 @@ export async function POST(req: Request, ctx: RouteCtx) {
     const { data: docs, error: dErr } = await supabase
       .from("normativa_docs")
       .select("id,titulo,texto_extraido")
-      .eq("negocio_id", negocioId)
+      .is("negocio_id", null)
       .not("texto_extraido", "is", null)
       .order("created_at", { ascending: false })
       .limit(6);

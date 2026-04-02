@@ -5,7 +5,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { estimateUsdFromSanction, classifyPrioridad, computePriorityScore } from "@/lib/finance";
 import { isSuperAdminEmail } from "@/lib/roles";
 import { labelClasificacionDoc } from "@/lib/normativa-titles";
-import { fetchNormativaDocsMiniRows, type NormativaMiniRow } from "@/lib/normativa-docs-query";
+import { fetchNormativaDocsMiniRowsForBusiness, type NormativaMiniRow } from "@/lib/normativa-docs-query";
 import { IaMarkdownStream } from "@/components/IaMarkdownStream";
 
 type Row = {
@@ -228,7 +228,7 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
 
   useEffect(() => {
     if (!supabase || !negocioId) return;
-    fetchNormativaDocsMiniRows(supabase, negocioId)
+    fetchNormativaDocsMiniRowsForBusiness(supabase, negocioId)
       .then(({ data }) => {
         const map: Record<string, NormativaMini> = {};
         for (const d of (data ?? []) as NormativaMini[]) map[d.id] = d;

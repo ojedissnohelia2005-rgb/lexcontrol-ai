@@ -12,27 +12,30 @@ export type NormativaDocListRow = {
   clasificacion_documento?: string | null;
 };
 
-/** Lista normativa del negocio; si aún no existe la columna clasificacion_documento, reintenta sin ella. */
-export async function fetchNormativaDocsForNegocio(
+/**
+ * Biblioteca normativa compartida (misma para todos los negocios): negocio_id IS NULL.
+ * La IA filtra qué aplica al negocio al mapear / generar propuestas.
+ */
+export async function fetchGlobalNormativaDocsList(
   supabase: SupabaseClient,
-  negocioId: string,
   opts?: { ascending?: boolean }
 ) {
   const ascending = opts?.ascending ?? false;
-  const q = supabase
-    .from("normativa_docs")
-    .select(COLS_FULL)
-    .eq("negocio_id", negocioId)
-    .order("created_at", { ascending });
+  const q = supabase.from("normativa_docs").select(COLS_FULL).is("negocio_id", null).order("created_at", { ascending });
   const first = await q;
   if (first.error && /clasificacion_documento/i.test(first.error.message)) {
-    return supabase
-      .from("normativa_docs")
-      .select(COLS_MIN)
-      .eq("negocio_id", negocioId)
-      .order("created_at", { ascending });
+    return supabase.from("normativa_docs").select(COLS_MIN).is("negocio_id", null).order("created_at", { ascending });
   }
   return first;
+}
+
+/** @deprecated Usar fetchGlobalNormativaDocsList; la lista ya no es por negocio. */
+export async function fetchNormativaDocsForNegocio(
+  supabase: SupabaseClient,
+  _negocioId: string,
+  opts?: { ascending?: boolean }
+) {
+  return fetchGlobalNormativaDocsList(supabase, opts);
 }
 
 const MATRIZ_NORMA_COLS_MIN = "id,titulo,fuente_url,storage_path,created_at";
@@ -47,16 +50,19 @@ export type NormativaMiniRow = {
   clasificacion_documento?: string | null;
 };
 
-/** Filas para matriz, propuestas o QnA (mismas columnas base). */
+/**
+ * Mini filas para QnA: solo biblioteca global.
+ * Para matriz/propuestas usa fetchNormativaDocsMiniRowsForBusiness (global + legado por negocio).
+ */
 export async function fetchNormativaDocsMiniRows(
   supabase: SupabaseClient,
-  negocioId: string,
+  _negocioId: string,
   opts?: { limit?: number }
 ): Promise<{ data: NormativaMiniRow[] | null; error: { message: string } | null }> {
   let q = supabase
     .from("normativa_docs")
     .select(MATRIZ_NORMA_COLS_FULL)
-    .eq("negocio_id", negocioId)
+    .is("negocio_id", null)
     .order("created_at", { ascending: false });
   if (opts?.limit != null) q = q.limit(opts.limit);
   const first = await q;
@@ -64,10 +70,31 @@ export async function fetchNormativaDocsMiniRows(
     let q2 = supabase
       .from("normativa_docs")
       .select(MATRIZ_NORMA_COLS_MIN)
-      .eq("negocio_id", negocioId)
+      .is("negocio_id", null)
       .order("created_at", { ascending: false });
     if (opts?.limit != null) q2 = q2.limit(opts.limit);
     return q2;
+  }
+  return first;
+}
+
+/** Resuelve títulos de normas en matriz/propuestas: global + documentos antiguos ligados al negocio. */
+export async function fetchNormativaDocsMiniRowsForBusiness(
+  supabase: SupabaseClient,
+  negocioId: string
+): Promise<{ data: NormativaMiniRow[] | null; error: { message: string } | null }> {
+  let q = supabase
+    .from("normativa_docs")
+    .select(MATRIZ_NORMA_COLS_FULL)
+    .or(`negocio_id.is.null,negocio_id.eq.${negocioId}`)
+    .order("created_at", { ascending: false });
+  const first = await q;
+  if (first.error && /clasificacion_documento/i.test(first.error.message)) {
+    return supabase
+      .from("normativa_docs")
+      .select(MATRIZ_NORMA_COLS_MIN)
+      .or(`negocio_id.is.null,negocio_id.eq.${negocioId}`)
+      .order("created_at", { ascending: false });
   }
   return first;
 }

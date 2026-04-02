@@ -34,7 +34,15 @@ export async function POST(req: Request) {
       .single();
     if (vErr || !viejo) return NextResponse.json({ error: "Documento a reemplazar no encontrado" }, { status: 400 });
 
-    if (nuevo.negocio_id !== body.negocio_id || viejo.negocio_id !== body.negocio_id) {
+    const nn = nuevo.negocio_id as string | null;
+    const vn = viejo.negocio_id as string | null;
+    if (nn !== vn) {
+      return NextResponse.json(
+        { error: "Los documentos deben estar en el mismo ámbito (biblioteca global o el mismo negocio)" },
+        { status: 400 }
+      );
+    }
+    if (nn !== null && nn !== body.negocio_id) {
       return NextResponse.json({ error: "Los documentos deben pertenecer al negocio indicado" }, { status: 400 });
     }
 

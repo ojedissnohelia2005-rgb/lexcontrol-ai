@@ -21,9 +21,9 @@ function getHelpContent(pathname: string) {
       title: "AI Notebook: normativa y matriz",
       points: [
         "Primero selecciona un Negocio activo; la descripción del negocio aparece a la izquierda y es el contexto base de la IA.",
-        "Elige el Origen de la información: usar normativa ya cargada (memoria) o subir un nuevo PDF para indexarlo.",
-        "En “Normativa en memoria”, marca uno o varios PDFs y pulsa “Mapear empresa y generar sugerencias”; las filas se envían a Propuestas pendientes.",
-        "Debajo tienes Preguntas sobre normativa (Memoria): puedes hacer consultas específicas a los PDFs cargados, por 1 documento o por todos."
+        "Elige el Origen de la información: la biblioteca de PDFs es la misma para todos los negocios; al mapear, la IA decide cuáles aplican al negocio activo. También puedes subir un PDF nuevo (entra a la biblioteca común).",
+        "En “Normativa en memoria”, marca uno o varios PDFs y pulsa “Mapear empresa y generar sugerencias”; las filas se envían a Propuestas pendientes del negocio seleccionado.",
+        "Debajo tienes Preguntas sobre normativa (Memoria): consultas sobre la biblioteca común, un PDF o todos."
       ]
     };
   }

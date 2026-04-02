@@ -32,8 +32,7 @@ export async function POST(req: Request) {
 
     const { data: docs, error: dErr } = await supabase
       .from("normativa_docs")
-      .select("id,titulo,texto_extraido")
-      .eq("negocio_id", body.negocio_id)
+      .select("id,titulo,texto_extraido,negocio_id")
       .in("id", body.normativa_doc_ids);
     if (dErr) return NextResponse.json({ error: dErr.message }, { status: 400 });
     if (!docs?.length) return NextResponse.json({ error: "No hay documentos seleccionados" }, { status: 400 });

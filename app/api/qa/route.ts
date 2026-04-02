@@ -23,7 +23,7 @@ export async function POST(req: Request) {
 
     let docsQuery = supabase.from("normativa_docs").select("id,titulo,fuente_url,storage_path,texto_extraido,created_at");
     if (body.doc_id) docsQuery = docsQuery.eq("id", body.doc_id);
-    if (body.negocio_id) docsQuery = docsQuery.eq("negocio_id", body.negocio_id);
+    else docsQuery = docsQuery.is("negocio_id", null);
 
     const { data: docs, error: dErr } = await docsQuery.order("created_at", { ascending: false }).limit(scope === "doc" ? 1 : 6);
     if (dErr) return NextResponse.json({ error: dErr.message }, { status: 400 });

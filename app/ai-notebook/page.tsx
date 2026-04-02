@@ -355,7 +355,7 @@ export default function AiNotebookPage() {
         <div className="mt-3 flex flex-wrap gap-3">
           <label className="flex cursor-pointer items-center gap-2 rounded-xl bg-cream px-4 py-2 text-sm ring-1 ring-borderSoft has-[:checked]:ring-2 has-[:checked]:ring-sidebarRose">
             <input type="radio" name="fuente" checked={fuente === "memoria"} onChange={() => setFuente("memoria")} />
-            Usar normativa ya cargada (base de datos / PDFs subidos)
+            Usar normativa ya cargada (biblioteca común a todos los negocios)
           </label>
           <label className="flex cursor-pointer items-center gap-2 rounded-xl bg-cream px-4 py-2 text-sm ring-1 ring-borderSoft has-[:checked]:ring-2 has-[:checked]:ring-sidebarRose">
             <input type="radio" name="fuente" checked={fuente === "subir"} onChange={() => setFuente("subir")} />
@@ -396,7 +396,7 @@ export default function AiNotebookPage() {
             <div className="mt-5">
               <div className="text-sm font-medium">Normativa en memoria</div>
               <div className="mt-1 text-xs text-charcoal/60">
-                Marca uno o varios PDFs indexados. La IA dirá cuáles aplican al negocio y creará filas en <strong>Propuestas pendientes</strong>.
+                Misma biblioteca de PDFs para <strong>todos los negocios</strong>. Marca uno o varios; la IA indica cuáles aplican al <strong>negocio activo</strong> y crea filas en <strong>Propuestas pendientes</strong>.
               </div>
               <div className="mt-3 max-h-56 space-y-2 overflow-y-auto rounded-xl bg-cream p-2 ring-1 ring-borderSoft">
                 {normativaDocs.length === 0 ? (

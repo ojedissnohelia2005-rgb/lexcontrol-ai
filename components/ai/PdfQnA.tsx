@@ -102,7 +102,7 @@ export function PdfQnA({ negocioId }: { negocioId: string | null }) {
               );
             })}
           </select>
-          <div className="mt-1 text-xs text-charcoal/60">{docs.length} PDFs en memoria</div>
+          <div className="mt-1 text-xs text-charcoal/60">{docs.length} PDFs en la biblioteca común</div>
         </label>
       </div>
 

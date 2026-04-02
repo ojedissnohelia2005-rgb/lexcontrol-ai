@@ -231,8 +231,9 @@ export async function mapNegocioNormativaGemini(input: {
 
   const prompt = [
     "Eres analista de cumplimiento Ecuador 2026.",
-    "1) Indica si cada documento (por id) APLICA al negocio descrito o no, con motivo breve.",
-    "2) Para los que apliquen (o fragmentos relevantes), extrae items de matriz de cumplimiento como en extracción legal.",
+    "Los documentos provienen de una BIBLIOTECA NORMATIVA COMPARTIDA (no están dedicados a un solo negocio).",
+    "1) Para cada documento (por id), decide con rigor si APLICA al negocio descrito (sector, actividades, detalles) o no; motivo breve.",
+    "2) Solo para los que apliquen (o fragmentos relevantes), extrae items de matriz de cumplimiento como en extracción legal.",
     "",
     "Salida SOLO JSON:",
     '{"docs":[{"doc_id":"uuid","aplica":true|false,"motivo":"..."}],"items":[{"articulo","requisito","sancion","cita_textual","link_fuente_oficial","fuente_verificada_url","area_competente","gerencia_competente","impacto_economico","probabilidad_incumplimiento","tipo_norma","norma_nombre","fecha_publicacion","organismo_emisor","resumen_experto","campo_juridico","observaciones","proceso_actividad_relacionada","sponsor","responsable_proceso","obligacion_grupo_id","obligacion_grupo_etiqueta"}]}',
