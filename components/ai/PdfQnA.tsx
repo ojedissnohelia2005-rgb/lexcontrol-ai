@@ -4,15 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { IaMarkdownStream } from "@/components/IaMarkdownStream";
 import { labelClasificacionDoc } from "@/lib/normativa-titles";
+import { fetchNormativaDocsMiniRows, type NormativaMiniRow } from "@/lib/normativa-docs-query";
 
-type DocMini = {
-  id: string;
-  titulo: string | null;
-  fuente_url: string | null;
-  storage_path: string | null;
-  created_at: string;
-  clasificacion_documento?: string | null;
-};
+type DocMini = NormativaMiniRow;
 
 export function PdfQnA({ negocioId }: { negocioId: string | null }) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
@@ -28,13 +22,9 @@ export function PdfQnA({ negocioId }: { negocioId: string | null }) {
   useEffect(() => {
     if (!negocioId) return;
     if (!supabase) return;
-    supabase
-      .from("normativa_docs")
-      .select("id,titulo,fuente_url,storage_path,created_at")
-      .eq("negocio_id", negocioId)
-      .order("created_at", { ascending: false })
-      .limit(50)
-      .then(({ data }) => setDocs((data ?? []) as DocMini[]));
+    fetchNormativaDocsMiniRows(supabase, negocioId, { limit: 50 }).then(({ data }) =>
+      setDocs((data ?? []) as DocMini[])
+    );
   }, [supabase, negocioId]);
 
   async function ask() {

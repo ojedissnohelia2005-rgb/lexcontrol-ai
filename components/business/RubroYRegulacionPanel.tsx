@@ -110,6 +110,7 @@ export function RubroYRegulacionPanel({ negocioId }: { negocioId: string }) {
     try {
       const res = await fetch("/api/gemini/rubro-guia", {
         method: "POST",
+        credentials: "include",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ negocio_id: negocioId, guardar })
       });

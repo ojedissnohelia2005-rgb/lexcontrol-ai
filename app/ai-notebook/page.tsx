@@ -11,17 +11,11 @@ import { PdfQnA } from "@/components/ai/PdfQnA";
 import { LEGAL_DRIVE_FOLDER_URL } from "@/lib/legal-constants";
 import type { ComparacionNormativa } from "@/types/domain";
 import { labelClasificacionDoc } from "@/lib/normativa-titles";
+import { fetchNormativaDocsForNegocio, type NormativaDocListRow } from "@/lib/normativa-docs-query";
 
 type NegocioMini = { id: string; nombre: string; sector: string | null; detalles_negocio: string | null };
 
-type NormativaRow = {
-  id: string;
-  titulo: string | null;
-  created_at: string;
-  sha256: string | null;
-  es_base_sistema?: boolean;
-  clasificacion_documento?: string | null;
-};
+type NormativaRow = NormativaDocListRow;
 
 function formatUiError(e: unknown) {
   const raw = e instanceof Error ? e.message : String(e);
@@ -58,11 +52,7 @@ export default function AiNotebookPage() {
 
   const loadNormativaDocs = useCallback(async () => {
     if (!supabase || !negocioId) return;
-    const { data, error } = await supabase
-      .from("normativa_docs")
-      .select("id,titulo,created_at,sha256,es_base_sistema,clasificacion_documento")
-      .eq("negocio_id", negocioId)
-      .order("created_at", { ascending: false });
+    const { data, error } = await fetchNormativaDocsForNegocio(supabase, negocioId);
     if (error) {
       setError(error.message);
       setNormativaDocs([]);

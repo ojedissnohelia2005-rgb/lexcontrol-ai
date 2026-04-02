@@ -5,6 +5,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { estimateUsdFromSanction, classifyPrioridad, computePriorityScore } from "@/lib/finance";
 import { isSuperAdminEmail } from "@/lib/roles";
 import { labelClasificacionDoc } from "@/lib/normativa-titles";
+import { fetchNormativaDocsMiniRows, type NormativaMiniRow } from "@/lib/normativa-docs-query";
 import { IaMarkdownStream } from "@/components/IaMarkdownStream";
 
 type Row = {
@@ -38,14 +39,7 @@ type Row = {
 };
 
 type AssignableProfile = { id: string; email: string | null; nombre: string | null; rol: string };
-type NormativaMini = {
-  id: string;
-  titulo: string | null;
-  fuente_url: string | null;
-  storage_path: string | null;
-  created_at: string;
-  clasificacion_documento?: string | null;
-};
+type NormativaMini = NormativaMiniRow;
 
 type Propuesta = {
   id: string;
@@ -234,11 +228,7 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
 
   useEffect(() => {
     if (!supabase || !negocioId) return;
-    supabase
-      .from("normativa_docs")
-      .select("id,titulo,fuente_url,storage_path,created_at,clasificacion_documento")
-      .eq("negocio_id", negocioId)
-      .order("created_at", { ascending: false })
+    fetchNormativaDocsMiniRows(supabase, negocioId)
       .then(({ data }) => {
         const map: Record<string, NormativaMini> = {};
         for (const d of (data ?? []) as NormativaMini[]) map[d.id] = d;

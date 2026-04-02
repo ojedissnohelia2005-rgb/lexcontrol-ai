@@ -70,23 +70,37 @@ export async function POST(req: Request) {
     const meta = await extractNormativaMetaGemini({ file_name: file.name, texto });
     const tituloDetectado = meta.titulo_detectado ?? file.name;
 
-    const { data: inserted, error: nErr } = await supabase
+    const rowBase = {
+      negocio_id,
+      titulo: tituloDetectado,
+      fuente_url: fuente_url,
+      storage_path: storage_path,
+      mime_type: file.type || "application/pdf",
+      texto_extraido: texto,
+      sha256,
+      fecha_normativa: meta.fecha_normativa_iso,
+      created_by: userData.user.id
+    };
+    let inserted:
+      | { id: string; created_at: string; titulo: string | null }
+      | null = null;
+    let nErr: { message: string } | null = null;
+
+    const insWithCls = await supabase
       .from("normativa_docs")
-      .insert({
-        negocio_id,
-        titulo: tituloDetectado,
-        fuente_url: fuente_url,
-        storage_path: storage_path,
-        mime_type: file.type || "application/pdf",
-        texto_extraido: texto,
-        sha256,
-        fecha_normativa: meta.fecha_normativa_iso,
-        clasificacion_documento: meta.clasificacion_documento,
-        created_by: userData.user.id
-      })
+      .insert({ ...rowBase, clasificacion_documento: meta.clasificacion_documento })
       .select("id,created_at,titulo")
       .single();
+    inserted = insWithCls.data;
+    nErr = insWithCls.error;
+
+    if (nErr && /clasificacion_documento/i.test(nErr.message)) {
+      const insFallback = await supabase.from("normativa_docs").insert(rowBase).select("id,created_at,titulo").single();
+      inserted = insFallback.data;
+      nErr = insFallback.error;
+    }
     if (nErr) return NextResponse.json({ error: nErr.message }, { status: 400 });
+    if (!inserted) return NextResponse.json({ error: "No se pudo registrar el documento" }, { status: 400 });
 
     /** Misma norma (título normalizado IA): conserva la carga más reciente; alerta en Notificaciones para revisión. */
     try {
