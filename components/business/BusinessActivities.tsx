@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { useCallback, useEffect, useState } from "react";
 
 type Actividad = {
   id: string;
@@ -11,38 +10,65 @@ type Actividad = {
 };
 
 export function BusinessActivities({ negocioId }: { negocioId: string }) {
-  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [items, setItems] = useState<Actividad[]>([]);
   const [nombre, setNombre] = useState("");
   const [descripcion, setDescripcion] = useState("");
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadActividades = useCallback(async () => {
+    if (!negocioId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/negocios/${negocioId}/actividades`, { credentials: "include" });
+      const raw = await res.text();
+      let data: { actividades?: Actividad[]; error?: string };
+      try {
+        data = JSON.parse(raw) as { actividades?: Actividad[]; error?: string };
+      } catch {
+        throw new Error(raw.slice(0, 220) || `Respuesta inválida (${res.status})`);
+      }
+      if (!res.ok || data.error) throw new Error(data.error ?? "No se pudieron cargar las actividades");
+      setItems(data.actividades ?? []);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Error al cargar");
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [negocioId]);
 
   useEffect(() => {
-    if (!supabase || !negocioId) return;
-    supabase
-      .from("negocio_actividades")
-      .select("id,nombre,descripcion,created_at")
-      .eq("negocio_id", negocioId)
-      .order("created_at", { ascending: true })
-      .then(({ data }) => setItems((data ?? []) as Actividad[]));
-  }, [supabase, negocioId]);
+    void loadActividades();
+  }, [loadActividades]);
 
   async function crearActividad() {
-    if (!supabase || !negocioId || !nombre.trim()) return;
+    if (!negocioId || !nombre.trim()) return;
     setSaving(true);
+    setError(null);
     try {
       const res = await fetch(`/api/negocios/${negocioId}/actividades`, {
         method: "POST",
+        credentials: "include",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ nombre: nombre.trim(), descripcion: descripcion.trim() || undefined })
       });
-      const data = (await res.json()) as { actividad?: Actividad; error?: string };
+      const raw = await res.text();
+      let data: { actividad?: Actividad; error?: string };
+      try {
+        data = JSON.parse(raw) as { actividad?: Actividad; error?: string };
+      } catch {
+        throw new Error(raw.slice(0, 220) || `Respuesta inválida (${res.status})`);
+      }
       if (!res.ok || data.error) throw new Error(data.error ?? "No se pudo crear la actividad");
+      if (!data.actividad) throw new Error("El servidor no devolvió la actividad creada");
       setItems((prev) => [...prev, data.actividad!]);
       setNombre("");
       setDescripcion("");
-    } catch (e) {
-      console.error(e);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Error al guardar");
     } finally {
       setSaving(false);
     }
@@ -58,6 +84,10 @@ export function BusinessActivities({ negocioId }: { negocioId: string }) {
           </div>
         </div>
       </div>
+      {error ? (
+        <div className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-800 ring-1 ring-red-200">{error}</div>
+      ) : null}
+
       <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
         <div className="space-y-2">
           <input
@@ -83,7 +113,9 @@ export function BusinessActivities({ negocioId }: { negocioId: string }) {
           </button>
         </div>
         <div className="max-h-48 space-y-2 overflow-y-auto rounded-xl bg-cream p-3 ring-1 ring-borderSoft">
-          {items.length === 0 ? (
+          {loading ? (
+            <div className="text-xs text-charcoal/70">Cargando actividades…</div>
+          ) : items.length === 0 ? (
             <div className="text-xs text-charcoal/70">Aún no hay actividades registradas para este negocio.</div>
           ) : (
             items.map((a) => (

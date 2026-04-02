@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { useCallback, useEffect, useState } from "react";
 
 type Actividad = {
   id: string;
@@ -9,7 +8,6 @@ type Actividad = {
 };
 
 export function BusinessSpecificTask({ negocioId }: { negocioId: string }) {
-  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [tarea, setTarea] = useState("");
   const [actividadId, setActividadId] = useState<string | "">("");
   const [actividades, setActividades] = useState<Actividad[]>([]);
@@ -17,21 +15,22 @@ export function BusinessSpecificTask({ negocioId }: { negocioId: string }) {
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const loadActividades = useCallback(async () => {
+    if (!negocioId) return;
+    try {
+      const res = await fetch(`/api/negocios/${negocioId}/actividades`, { credentials: "include" });
+      const data = (await res.json()) as { actividades?: { id: string; nombre: string }[]; error?: string };
+      if (!res.ok || data.error) throw new Error(data.error ?? "No se cargaron actividades");
+      setActividades(data.actividades ?? []);
+    } catch (e: unknown) {
+      console.error(e);
+      setActividades([]);
+    }
+  }, [negocioId]);
+
   useEffect(() => {
-    if (!supabase || !negocioId) return;
-    supabase
-      .from("negocio_actividades")
-      .select("id,nombre")
-      .eq("negocio_id", negocioId)
-      .order("created_at", { ascending: true })
-      .then(({ data, error }) => {
-        if (error) {
-          console.error(error);
-          return;
-        }
-        setActividades((data ?? []) as Actividad[]);
-      });
-  }, [supabase, negocioId]);
+    void loadActividades();
+  }, [loadActividades]);
 
   async function enviarTarea() {
     if (!tarea.trim()) return;
@@ -41,6 +40,7 @@ export function BusinessSpecificTask({ negocioId }: { negocioId: string }) {
     try {
       const res = await fetch(`/api/negocios/${negocioId}/tarea-especifica`, {
         method: "POST",
+        credentials: "include",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           descripcion: tarea.trim(),
@@ -56,10 +56,6 @@ export function BusinessSpecificTask({ negocioId }: { negocioId: string }) {
     } finally {
       setBusy(false);
     }
-  }
-
-  if (!supabase) {
-    return null;
   }
 
   return (
