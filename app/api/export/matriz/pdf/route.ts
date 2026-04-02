@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { effectiveMatrizResponsableCompliance, type ProfileMini } from "@/lib/assignable-profile-label";
 
 function esc(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -18,17 +19,29 @@ export async function GET(req: Request) {
     const { data: rows, error } = await supabase
       .from("matriz_cumplimiento")
       .select(
-        "estado,articulo,requisito,sancion,multa_estimada_usd,evidencia_url,responsable,prioridad,fuente_verificada_url"
+        "estado,articulo,requisito,sancion,multa_estimada_usd,evidencia_url,responsable,supervisor_legal_id,prioridad,fuente_verificada_url"
       )
       .eq("negocio_id", negocio_id)
       .order("created_at", { ascending: false });
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
-    const trs = (rows ?? [])
-      .map(
-        (r) =>
-          `<tr><td>${esc(String(r.estado))}</td><td>${esc(String(r.articulo))}</td><td>${esc(String(r.requisito))}</td><td>${esc(String(r.sancion ?? ""))}</td><td>${r.multa_estimada_usd != null ? esc(String(r.multa_estimada_usd)) : "—"}</td><td>${esc(String(r.responsable ?? ""))}</td><td>${esc(String(r.prioridad ?? ""))}</td></tr>`
-      )
+    const raw = rows ?? [];
+    const supIds = [...new Set(raw.map((r) => r.supervisor_legal_id as string | null).filter(Boolean))] as string[];
+    const profileById = new Map<string, ProfileMini>();
+    if (supIds.length > 0) {
+      const { data: profs } = await supabase.from("profiles").select("id,nombre,email").in("id", supIds);
+      for (const p of (profs ?? []) as ProfileMini[]) profileById.set(p.id, p);
+    }
+
+    const trs = raw
+      .map((r) => {
+        const resp = effectiveMatrizResponsableCompliance(
+          r.responsable,
+          r.supervisor_legal_id,
+          profileById
+        );
+        return `<tr><td>${esc(String(r.estado))}</td><td>${esc(String(r.articulo))}</td><td>${esc(String(r.requisito))}</td><td>${esc(String(r.sancion ?? ""))}</td><td>${r.multa_estimada_usd != null ? esc(String(r.multa_estimada_usd)) : "—"}</td><td>${esc(String(resp))}</td><td>${esc(String(r.prioridad ?? ""))}</td></tr>`;
+      })
       .join("");
 
     const html = `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"/><title>Matriz de cumplimiento</title>

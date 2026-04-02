@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { formatAssignableProfileLabel } from "@/lib/assignable-profile-label";
 import { organizacionParaAprobarPropuesta } from "@/lib/matriz-gerencia-jefatura";
 
 const BodySchema = z.object({
@@ -50,6 +51,23 @@ export async function POST(req: Request) {
       responsable_proceso: extraCols.responsable_proceso
     });
 
+    let responsableCompliance: string | null = null;
+    if (supId) {
+      const { data: supProf } = await supabase
+        .from("profiles")
+        .select("nombre,email")
+        .eq("id", supId)
+        .maybeSingle();
+      const sp = supProf as { nombre?: string | null; email?: string | null } | null;
+      if (sp) {
+        responsableCompliance = formatAssignableProfileLabel({
+          nombre: sp.nombre ?? null,
+          email: sp.email ?? null,
+          id: supId
+        });
+      }
+    }
+
     // Insert into matriz_cumplimiento
     const insertPayload = {
       negocio_id: propuesta.negocio_id,
@@ -69,6 +87,7 @@ export async function POST(req: Request) {
       multa_estimada_usd: propuesta.multa_estimada_usd,
       impacto_economico: propuesta.impacto_economico,
       probabilidad_incumplimiento: propuesta.probabilidad_incumplimiento,
+      responsable: responsableCompliance,
       prioridad: propuesta.prioridad,
       estado: propuesta.estado,
       evidencia_url: propuesta.evidencia_url,

@@ -14,6 +14,7 @@ import {
   patchGerenciaUnificada,
   patchJefaturaUnificada
 } from "@/lib/matriz-gerencia-jefatura";
+import { effectiveMatrizResponsableCompliance, formatAssignableProfileLabel } from "@/lib/assignable-profile-label";
 
 type Row = {
   id: string;
@@ -41,6 +42,7 @@ type Row = {
   probabilidad_incumplimiento?: number | null;
   gerencia_competente?: string | null;
   area_competente?: string | null;
+  supervisor_legal_id?: string | null;
   normativa_doc_id?: string | null;
   created_at?: string;
 };
@@ -155,6 +157,12 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
   const canAdminMatrix = currentRole === "admin" || currentRole === "super_admin";
   const canDeleteFiles = canAdminMatrix;
 
+  const assignableById = useMemo(() => {
+    const m = new Map<string, AssignableProfile>();
+    for (const u of assignable) m.set(u.id, u);
+    return m;
+  }, [assignable]);
+
   function storagePathFromEvidenceUrl(v: string | null | undefined) {
     if (!v) return null;
     const s = String(v);
@@ -174,7 +182,7 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
         supabase
           .from("matriz_cumplimiento")
           .select(
-            "id,estado,tipo_norma,norma_nombre,fecha_publicacion,organismo_emisor,resumen_experto,campo_juridico,observaciones,proceso_actividad_relacionada,sponsor,responsable_proceso,articulo,requisito,sancion,multa_estimada_usd,impacto_economico,probabilidad_incumplimiento,responsable,prioridad,evidencia_url,link_fuente_oficial,fuente_verificada_url,gerencia_competente,area_competente,normativa_doc_id,created_at"
+            "id,estado,tipo_norma,norma_nombre,fecha_publicacion,organismo_emisor,resumen_experto,campo_juridico,observaciones,proceso_actividad_relacionada,sponsor,responsable_proceso,articulo,requisito,sancion,multa_estimada_usd,impacto_economico,probabilidad_incumplimiento,responsable,prioridad,evidencia_url,link_fuente_oficial,fuente_verificada_url,gerencia_competente,area_competente,supervisor_legal_id,normativa_doc_id,created_at"
           )
           .eq("negocio_id", negocioId)
           .order("created_at", { ascending: false }),
@@ -809,9 +817,13 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
                         <input
                           className="w-[190px] rounded-xl bg-cream px-3 py-2 text-xs ring-1 ring-borderSoft"
                           placeholder="Responsable compliance"
-                          value={r.responsable ?? ""}
+                          value={effectiveMatrizResponsableCompliance(
+                            r.responsable,
+                            r.supervisor_legal_id ?? null,
+                            assignableById
+                          )}
                           disabled={!canEditMatrix}
-                          onChange={(e) => void updateRow(r.id, { responsable: e.target.value })}
+                          onChange={(e) => void updateRow(r.id, { responsable: e.target.value || null })}
                         />
                       </div>
                       <div>
@@ -1236,8 +1248,7 @@ export function BusinessMatrix({ negocioId }: { negocioId: string }) {
                       <option value="">— Sin asignar —</option>
                       {assignable.map((u) => (
                         <option key={u.id} value={u.id}>
-                          {(u.nombre || u.email || u.id).slice(0, 48)}
-                          {u.email ? ` · ${u.email}` : ""}
+                          {formatAssignableProfileLabel(u)}
                         </option>
                       ))}
                     </select>
