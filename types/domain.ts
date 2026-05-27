@@ -6,6 +6,7 @@ export type ProfileRole = "super_admin" | "admin" | "user";
 
 export const SUPER_ADMIN_EMAILS = new Set([
   "nohe.ojedis@cumplimientonormativo.edu.ec",
+  "nohelia.ojedis@uees.edu.ec",
   "ortix@cumplimientonormativo.edu.ec",
   "ojedissnohelia2005@gmail.com",
   "mathias.martinez@uees.edu.ec"

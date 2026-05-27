@@ -143,12 +143,26 @@ export function DashboardClient() {
           <div className="mt-1 text-sm text-charcoal/60">Widgets de matriz resumida y riesgos.</div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link className="rounded-xl bg-white px-4 py-2 text-sm ring-1 ring-borderSoft hover:bg-cream/70" href="/ai-notebook">
-            Subir Normativa PDF
+          <Link
+            className="rounded-xl bg-sidebarRose px-4 py-2 text-sm font-medium text-cream shadow-sm hover:bg-sidebarRose/90"
+            href="/demo"
+          >
+            Guía demo 15 min
           </Link>
           <Link className="rounded-xl bg-white px-4 py-2 text-sm ring-1 ring-borderSoft hover:bg-cream/70" href="/ai-notebook">
-            Generar Matriz de Riesgo
+            AI Notebook
           </Link>
+          <Link className="rounded-xl bg-white px-4 py-2 text-sm ring-1 ring-borderSoft hover:bg-cream/70" href="/procesos">
+            Procesos judiciales
+          </Link>
+          {negocioId ? (
+            <Link
+              className="rounded-xl bg-white px-4 py-2 text-sm ring-1 ring-borderSoft hover:bg-cream/70"
+              href={`/business/${negocioId}`}
+            >
+              Matriz
+            </Link>
+          ) : null}
         </div>
       </div>
 
